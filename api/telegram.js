@@ -42,6 +42,60 @@ function usd(n) {
   return "$" + Number(n || 0).toFixed(3);
 }
 
+function money(n) {
+  n = Number(n || 0);
+  return n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : "нет данных";
+}
+
+function almostText(state) {
+  const items = Object.values(state.almost_gems_by_key || {})
+    .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
+    .sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff) return scoreDiff;
+      return String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
+    })
+    .slice(0, 8);
+
+  if (!items.length) {
+    return [
+      "🟡 Почти гемы 7.8–8.4",
+      "",
+      "Сейчас таких машин в кэше нет.",
+      "Они появятся здесь после следующих глубоких проверок.",
+      "",
+      "🔥 Настоящий GEM начинается с 8.5/10."
+    ].join("\n");
+  }
+
+  const blocks = items.map((x, i) => {
+    const url = x.auto_ria_url || x.telegram_url || "";
+    const mileage = Number(x.mileage_km || 0) > 0
+      ? Math.round(Number(x.mileage_km)).toLocaleString("ru-RU") + " км"
+      : "нет данных";
+    const target = Number(x.target_buy_price_usd || 0) > 0
+      ? money(x.target_buy_price_usd)
+      : "нет данных";
+    const verdict = String(x.verdict || "").replace(/\s+/g, " ").slice(0, 220);
+
+    return [
+      `${i + 1}. 🟡 ${x.model || "Авто"} ${x.year || ""} ${x.trim || ""}`.trim(),
+      `⭐ ${Number(x.score || 0).toFixed(2)}/10 · confidence ${Number(x.confidence_pct || 0)}%`,
+      `💵 ${money(x.price_usd)} · 🛣 ${mileage}`,
+      `🎯 Интересная цена: ${target}`,
+      verdict ? `💬 ${verdict}` : null,
+      url ? `🔗 ${url}` : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  return [
+    "🟡 Почти гемы — рейтинг 7.8–8.4",
+    "Автоматически я их не присылаю. Только по /almost.",
+    "",
+    ...blocks
+  ].join("\n\n").slice(0, 3900);
+}
+
 function statusText(state) {
   let result = "ещё нет завершённых проверок";
 
@@ -78,6 +132,7 @@ function statusText(state) {
     "",
     "Источники: AUTO.RIA + KIEVAVTO + IsAuto",
     "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
+    "Команды: /status · /almost",
   ].filter(Boolean).join("\n");
 }
 
@@ -92,16 +147,19 @@ export default async function handler(req, res) {
   }
 
   const text = String(message.text || "").trim().toLowerCase();
-  if (!/^\/(start|status)(@\w+)?\b/.test(text)) {
+  if (!/^\/(start|status|almost)(@\w+)?\b/.test(text)) {
     return res.status(200).json({ ok: true });
   }
 
   const state = await loadState();
+  const reply = /^\/almost(@\w+)?\b/.test(text)
+    ? almostText(state)
+    : statusText(state);
 
   return res.status(200).json({
     method: "sendMessage",
     chat_id: String(message.chat.id),
-    text: statusText(state),
-    disable_web_page_preview: true
+    text: reply,
+    disable_web_page_preview: false
   });
 }
