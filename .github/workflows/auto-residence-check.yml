@@ -1,0 +1,40 @@
+name: Auto Residence Free Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/auto-residence-check.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          node --check sources.mjs
+          node --check scout.mjs
+      - name: Check ~30 recent posts without OpenAI
+        env:
+          TELEGRAM_FORCE_RECENT_POSTS: "30"
+          DEBUG_TELEGRAM_PARSER: "true"
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { collectDirectSources } from "./sources.mjs";
+          const state = JSON.parse(fs.readFileSync("seen.json","utf8"));
+          const r = await collectDirectSources(state);
+          const x = r.stats.telegram_channels?.auto_residence_ua || {};
+          console.log("AUTO_RESIDENCE", JSON.stringify(x));
+          console.log("TOTAL_CHANNELS", Object.keys(r.stats.telegram_channels || {}).length);
+          console.log("HEALTH", JSON.stringify(r.source_health_warnings));
+          console.log("ERRORS", JSON.stringify(r.errors));
+          if (Number(x.raw_posts_seen || 0) < 25) process.exit(2);
+          if (r.source_health_warnings.length) process.exit(3);
+          NODE
