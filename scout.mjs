@@ -714,6 +714,11 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     `📅 API сегодня (учтено ботом): ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     "",
     gemCount ? "👇 Ниже отправлю найденные ГЕМЫ отдельными сообщениями." : "ГЕМов нет — следующий проход по расписанию.",
+    "",
+    "⌨️ Команды:",
+    "/status — текущий статус",
+    "/almost — машины 7.8–8.4",
+    "/start — показать статус / проверить бота",
   ].filter(Boolean).join("\n");
 }
 
