@@ -1,11 +1,6 @@
 name: Car Gem Scout
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/scout.yml"
   schedule:
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
