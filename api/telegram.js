@@ -59,32 +59,9 @@ function statusText(state) {
   ].join("\n");
 }
 
-async function sendTelegram(token, chatId, text) {
-  const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: true,
-    }),
-  });
-
-  if (!r.ok) {
-    const body = await r.text();
-    throw new Error("Telegram sendMessage failed: " + body.slice(0, 500));
-  }
-}
-
 export default async function handler(req, res) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-
   if (req.method !== "POST") {
     return res.status(200).json({ ok: true, service: "Car Gem Scout webhook" });
-  }
-
-  if (!token) {
-    return res.status(500).json({ ok: false, error: "missing_bot_token" });
   }
 
   const message = req.body?.message;
@@ -98,7 +75,11 @@ export default async function handler(req, res) {
   }
 
   const state = await loadState();
-  await sendTelegram(token, String(message.chat.id), statusText(state));
 
-  return res.status(200).json({ ok: true });
+  return res.status(200).json({
+    method: "sendMessage",
+    chat_id: String(message.chat.id),
+    text: statusText(state),
+    disable_web_page_preview: true
+  });
 }
