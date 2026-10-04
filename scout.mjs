@@ -550,6 +550,153 @@ function candidateKey(candidate) {
   return "URL:" + crypto.createHash("sha1").update(url || JSON.stringify(candidate)).digest("hex").slice(0, 16);
 }
 
+function validVin(vin) {
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(String(vin || "").toUpperCase().trim());
+}
+
+function sourceUrl(item) {
+  return normalizeUrl(item?.source_url || item?.auto_ria_url || item?.telegram_url || "");
+}
+
+function ensureSourceQueue(state) {
+  if (!state.source_queue || typeof state.source_queue !== "object" || Array.isArray(state.source_queue)) {
+    state.source_queue = {};
+  }
+  return state.source_queue;
+}
+
+function compactQueuedSource(item, nowIso, previous = {}) {
+  return {
+    ...previous,
+    source: item.source || previous.source || "",
+    source_url: item.source_url || previous.source_url || "",
+    auto_ria_url: item.auto_ria_url || previous.auto_ria_url || "",
+    telegram_url: item.telegram_url || previous.telegram_url || "",
+    vin_hint: item.vin_hint || previous.vin_hint || "",
+    price_hint_usd: Number(item.price_hint_usd || previous.price_hint_usd || 0),
+    mileage_hint_km: Number(item.mileage_hint_km || previous.mileage_hint_km || 0),
+    year_hint: Number(item.year_hint || previous.year_hint || 0),
+    model_hint: item.model_hint || previous.model_hint || "",
+    published_at_hint: item.published_at_hint || previous.published_at_hint || "",
+    market_median_hint_usd: Number(item.market_median_hint_usd || previous.market_median_hint_usd || 0),
+    price_anomaly_pct: Number(item.price_anomaly_pct || previous.price_anomaly_pct || 0),
+    exploration: Boolean(item.exploration),
+    raw_text: String(item.raw_text || previous.raw_text || "").slice(0, 1300),
+    first_seen_at: previous.first_seen_at || nowIso,
+    last_seen_at: nowIso,
+  };
+}
+
+function updateSourceQueue(state, pool, nowIso) {
+  const queue = ensureSourceQueue(state);
+  const seen = new Set((state.source_seen_urls || []).map(normalizeUrl));
+
+  for (const item of pool || []) {
+    const url = sourceUrl(item);
+    if (!url || seen.has(url)) continue;
+    queue[url] = compactQueuedSource(item, nowIso, queue[url] || {});
+  }
+
+  const entries = Object.entries(queue)
+    .sort((a, b) => String(b[1].last_seen_at || "").localeCompare(String(a[1].last_seen_at || "")))
+    .slice(0, 600);
+  state.source_queue = Object.fromEntries(entries);
+  return state.source_queue;
+}
+
+function sourcePriority(item, nowMs = Date.now()) {
+  const first = Date.parse(item.first_seen_at || "") || nowMs;
+  const ageHours = Math.max(0, (nowMs - first) / 3600000);
+  const anomaly = Number(item.price_anomaly_pct || 0);
+  const ageScore = Math.min(360, ageHours * 7.5);
+  const anomalyScore = anomaly >= 10 ? 250 + Math.min(250, anomaly * 10) : Math.max(0, anomaly * 4);
+  const telegramBonus = item.source === "KIEVAVTO" || item.source === "IsAuto" ? 35 : 0;
+  const explorationBonus = item.exploration ? 12 : 0;
+  const mileageBonus = Number(item.mileage_hint_km || 0) > 0 && Number(item.mileage_hint_km) <= 70000 ? 25 : 0;
+  return ageScore + anomalyScore + telegramBonus + explorationBonus + mileageBonus;
+}
+
+function selectSourceBatch(state, priceChangedItems = [], limit = 32) {
+  const queue = ensureSourceQueue(state);
+  const changed = (priceChangedItems || []).map((x) => ({
+    ...x,
+    price_change_recheck: true,
+    queue_age_hours: 0,
+  }));
+
+  const changedUrls = new Set(changed.map(sourceUrl).filter(Boolean));
+  const queued = Object.values(queue)
+    .filter((x) => !changedUrls.has(sourceUrl(x)))
+    .map((x) => ({
+      ...x,
+      queue_age_hours: Math.round(Math.max(0, (Date.now() - (Date.parse(x.first_seen_at || "") || Date.now())) / 3600000) * 10) / 10,
+    }))
+    .sort((a, b) => sourcePriority(b) - sourcePriority(a));
+
+  return [...changed, ...queued].slice(0, limit);
+}
+
+function markSourceBatchProcessed(state, batch) {
+  const queue = ensureSourceQueue(state);
+  const urls = [];
+
+  for (const item of batch || []) {
+    const url = sourceUrl(item);
+    if (!url) continue;
+    urls.push(url);
+    delete queue[url];
+  }
+
+  commitObservedUrls(state, urls);
+  state.last_source_queue_count = Object.keys(queue).length;
+}
+
+function ensureVinCache(state) {
+  if (!state.vin_cache || typeof state.vin_cache !== "object" || Array.isArray(state.vin_cache)) {
+    state.vin_cache = {};
+  }
+  return state.vin_cache;
+}
+
+function getVinCache(state, candidate) {
+  const vin = String(candidate?.vin || "").toUpperCase().trim();
+  if (!validVin(vin)) return null;
+  return ensureVinCache(state)[vin] || null;
+}
+
+function updateVinCache(state, analysis, nowIso) {
+  const vin = String(analysis?.vin || "").toUpperCase().trim();
+  if (!validVin(vin)) return;
+
+  const hasUsefulHistory = [
+    analysis.history_url,
+    analysis.auction_lot_date,
+    analysis.primary_secondary_damage,
+    analysis.pre_repair_photos_summary,
+  ].some((x) => x && x !== "нет данных");
+
+  if (!hasUsefulHistory) return;
+
+  ensureVinCache(state)[vin] = {
+    vin,
+    history_url: analysis.history_url || "",
+    auction_lot_date: analysis.auction_lot_date || "нет данных",
+    primary_secondary_damage: analysis.primary_secondary_damage || "нет данных",
+    run_drive_starts: analysis.run_drive_starts || "нет данных",
+    airbags: analysis.airbags || "нет данных",
+    structure: analysis.structure || "нет данных",
+    flood_water: analysis.flood_water || "нет данных",
+    auction_mileage: analysis.auction_mileage || "нет данных",
+    pre_repair_photos_summary: analysis.pre_repair_photos_summary || "нет данных",
+    estimated_repair_cost_usd: Number(analysis.estimated_repair_cost_usd || 0),
+    acv_usd: Number(analysis.acv_usd || 0),
+    retail_value_usd: Number(analysis.retail_value_usd || 0),
+    final_bid_usd: Number(analysis.final_bid_usd || 0),
+    repair_acv_pct: Number(analysis.repair_acv_pct || 0),
+    cached_at: nowIso,
+  };
+}
+
 function ensureMarketWatch(state) {
   if (!state.market_watch || typeof state.market_watch !== "object" || Array.isArray(state.market_watch)) {
     state.market_watch = {};
@@ -704,8 +851,11 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     "📡 Car Gem Scout — проход завершён",
     "",
     `📥 Прямой сбор: AUTO.RIA ${autoCount} / Telegram ${tgCount}`,
-    `🗺 Покрытие: AUTO.RIA ${modelCount} моделей / ${autoPages} страниц; Telegram ${tgPages} страниц`,
-    `🧲 После discovery: ${discoveredCount}`,
+    `🗺 Проверено: AUTO.RIA — ${modelCount} основных моделей + широкий поиск по брендам; Telegram — ${tgPages} страниц`,
+    state.last_exploration_brands?.length ? `🔄 Доп. поиск сегодня: ${state.last_exploration_brands.join(", ")}` : null,
+    `🧲 Luna отобрала кандидатов: ${discoveredCount}`,
+    `⏳ Осталось в очереди на первичный просмотр: ${state.last_source_queue_count || 0}`,
+    `💰 Ценовых аномалий >=10% в текущем пакете: ${state.last_price_anomaly_count || 0}`,
     `🔬 Luna deep-analysis: ${selectedCount}`,
     `🧠 Sol final audit: ${solAudits}`,
     `🟡 Почти гемов 7.8–8.4: ${almostCount} (команда /almost)`,
@@ -814,6 +964,13 @@ async function discoverCandidates(state, directItems = []) {
       price_hint_usd: Number(x.price_hint_usd || 0),
       mileage_hint_km: Number(x.mileage_hint_km || 0),
       published_at_hint: x.published_at_hint || "",
+      model_hint: x.model_hint || "",
+      year_hint: Number(x.year_hint || 0),
+      market_median_hint_usd: Number(x.market_median_hint_usd || 0),
+      price_anomaly_pct: Number(x.price_anomaly_pct || 0),
+      queue_age_hours: Number(x.queue_age_hours || 0),
+      exploration: Boolean(x.exploration),
+      price_change_recheck: Boolean(x.price_change_recheck),
       raw_text: String(x.raw_text || "").slice(0, 1100),
     }));
 
@@ -835,7 +992,10 @@ async function discoverCandidates(state, directItems = []) {
 - не тащи скучные массовые седаны;
 - Kia Stinger только при аномально выгодной сделке;
 - очевидные flood/fire/тяжёлый structural мусор не выбирай, если это прямо видно в тексте;
-- для каждого поставь discovery_score 0–10.
+- для каждого поставь discovery_score 0–10;
+- market_median_hint_usd / price_anomaly_pct уже посчитал локальный код: если машина на 10–15%+ дешевле медианы похожих объявлений, это сильный плюс, но не игнорируй возможную причину низкой цены;
+- queue_age_hours — сколько кандидат ждал обработки. Старый нормальный кандидат не должен проигрывать бесконечно новым;
+- exploration=true означает, что машина найдена широким ротационным поиском по бренду, а не из фиксированного списка моделей.
 
 Если какого-то поля нет — пустая строка или 0. НИЧЕГО не выдумывай.
 
@@ -892,13 +1052,25 @@ ${JSON.stringify(watchlist)}
   });
 }
 
-async function lunaAnalyzeOne(candidate) {
+async function lunaAnalyzeOne(candidate, vinCache = null) {
+  const cacheInstruction = vinCache
+    ? `
+VIN-HISTORY CACHE:
+${JSON.stringify(vinCache)}
+
+История этого VIN уже была найдена раньше. НЕ трать web-search на повторный поиск Copart/IAAI/BidFax/Stat.vin, если нет явного противоречия. Используй кэш как подтверждённую базу и трать поиск на текущий рынок Украины и действительно новые риски.
+`
+    : `
+VIN CACHE отсутствует. Если VIN есть, один раз найди доступную аукционную историю и ключевые данные.
+`;
+
   const prompt = `
 Ты — экономный, но тщательный DEEP ANALYSIS-этап Car Gem Scout.
-Проверь конкретную машину. Используй web search только для вещей, реально влияющих на решение: VIN/аукцион, украинский рынок и критичные технические риски.
+Проверь конкретную машину. Используй web search только для вещей, реально влияющих на решение.
 
 КАНДИДАТ:
 ${JSON.stringify(candidate)}
+${cacheInstruction}
 
 МОЙ ПРОФИЛЬ:
 - первая машина в Украине;
@@ -910,11 +1082,12 @@ ${JSON.stringify(candidate)}
 - главный ориентир Infiniti Q60.
 
 ОБЯЗАТЕЛЬНО:
-- по VIN попробуй найти Copart / IAAI / BidFax / Stat.vin или другой доступный архив;
+- если VIN-history НЕ закэширована: попробуй найти Copart / IAAI / BidFax / Stat.vin или другой доступный архив;
 - выясни damage, Run & Drive/Starts, airbags, structure, flood, auction mileage, Estimated Repair Cost, ACV, Retail Value, Final Bid, фото до ремонта;
 - сравни цену с украинским рынком;
 - оцени Real Buy-In первые ~6 месяцев;
 - учти комплектацию;
+- учитывай локальный price_anomaly_pct только как сигнал, а не как доказательство выгодности;
 - если данных нет — не выдумывай.
 
 HARD REJECT: flood/water, fire, тяжёлый structural/safety-cell/geometry, тяжёлый фронт с риском силового агрегата/охлаждения, тяжёлый множественный SRS, сомнительное восстановление.
@@ -936,13 +1109,17 @@ candidate_key скопируй ТОЧНО: ${candidate.candidate_key}
     maxOutputTokens: 4500,
     useWebSearch: true,
     searchContextSize: "medium",
-    maxToolCalls: 3,
+    maxToolCalls: vinCache ? 2 : 3,
   });
 
   return (result.analyses || [])[0] || null;
 }
 
-async function solAuditOne(candidate, preliminary) {
+async function solAuditOne(candidate, preliminary, vinCache = null) {
+  const cacheInstruction = vinCache
+    ? "VIN-history уже закэширована. Не ищи аукцион заново без явного противоречия с текущими данными."
+    : "VIN-cache отсутствует: при необходимости проверь критичную историю VIN.";
+
   const prompt = `
 Ты — FINAL AUDITOR Car Gem Scout. Luna уже сделала предварительный глубокий анализ машины.
 Твоя задача — НЕ повторять весь ресерч без необходимости, а проверить самые критичные места и решить, можно ли реально отправлять пользователю алерт "ГЕМ".
@@ -953,12 +1130,14 @@ ${JSON.stringify(candidate)}
 ПРЕДВАРИТЕЛЬНЫЙ АНАЛИЗ LUNA:
 ${JSON.stringify(preliminary)}
 
+${cacheInstruction}
+${vinCache ? "КЭШ: " + JSON.stringify(vinCache) : ""}
+
 ПРОВЕРЬ В ПЕРВУЮ ОЧЕРЕДЬ:
-1) VIN/аукцион и реальную тяжесть повреждения;
-2) flood/fire/structure/SRS и любые стоп-факторы;
-3) текущую цену против рынка Украины;
-4) технический риск крупных расходов;
-5) не завышены ли score/confidence.
+1) нет ли стоп-фактора в истории;
+2) текущую цену против рынка Украины;
+3) технический риск крупных расходов;
+4) не завышены ли score/confidence.
 
 Не трать поиск на очевидные уже подтверждённые мелочи. Если источник не найден — снижай confidence, не выдумывай.
 Верни полный объект анализа той же структуры, исправив предварительный анализ там, где нужно.
@@ -974,13 +1153,13 @@ candidate_key должен остаться ровно: ${candidate.candidate_ke
     maxOutputTokens: 4200,
     useWebSearch: true,
     searchContextSize: "high",
-    maxToolCalls: 3,
+    maxToolCalls: vinCache ? 2 : 3,
   });
 
   return (result.analyses || [])[0] || null;
 }
 
-async function deepAnalyzeCandidates(candidates) {
+async function deepAnalyzeCandidates(candidates, state) {
   if (!candidates.length) return { analyses: [], failed: 0 };
 
   const analyses = [];
@@ -988,7 +1167,8 @@ async function deepAnalyzeCandidates(candidates) {
 
   for (const candidate of candidates) {
     try {
-      const result = await lunaAnalyzeOne(candidate);
+      const cached = getVinCache(state, candidate);
+      const result = await lunaAnalyzeOne(candidate, cached);
       if (result) analyses.push(result);
       else failed += 1;
     } catch (error) {
@@ -1028,21 +1208,29 @@ if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 
 try {
   const direct = await collectDirectSources(state);
+  const nowIso = new Date().toISOString();
+
   state.last_collector_stats = direct.stats;
   state.last_collector_errors = (direct.errors || []).slice(0, 8);
-  state.last_collector_mode = direct.items.length ? "direct" : "web_fallback";
+  state.telegram_high_water = direct.telegram_high_water || state.telegram_high_water || {};
 
-  const discovery = await discoverCandidates(state, direct.items);
+  updateSourceQueue(state, direct.pool || [], nowIso);
+  const sourceBatch = selectSourceBatch(state, direct.price_changed_items || [], 32);
+  state.last_source_queue_count = Object.keys(ensureSourceQueue(state)).length;
+  state.last_price_anomaly_count = sourceBatch.filter((x) => Number(x.price_anomaly_pct || 0) >= 10).length;
+  state.last_exploration_brands = direct.exploration_brands || [];
+  state.last_collector_mode = sourceBatch.length ? "direct" : "web_fallback";
 
-  // Mark only the cards that were actually handed to Luna.
-  // Cards discovered deeper in AUTO.RIA/Telegram but not included in this batch stay pending
-  // and will be offered again on a later pass instead of being silently skipped.
-  commitObservedUrls(
-    state,
-    direct.items.map((x) => x.source_url || x.auto_ria_url || x.telegram_url).filter(Boolean)
-  );
+  // Persist the queue/high-water before any paid API call.
+  saveState(state);
 
-  const nowIso = new Date().toISOString();
+  const discovery = await discoverCandidates(state, sourceBatch);
+
+  // Every card in sourceBatch was actually shown to Luna's cheap filter.
+  // Remove it from the pending queue only after that call succeeds.
+  markSourceBatchProcessed(state, sourceBatch);
+
+
   const discovered = (discovery.candidates || [])
     .filter((x) => x && (x.source_url || x.auto_ria_url || x.telegram_url))
     .map((x) => recordDiscoveredCandidate(state, x, nowIso));
@@ -1077,7 +1265,7 @@ try {
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
 
-  const deep = await deepAnalyzeCandidates(selected);
+  const deep = await deepAnalyzeCandidates(selected, state);
   state.last_deep_failed_count = Number(deep.failed || 0);
 
   const lunaByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
@@ -1108,7 +1296,7 @@ try {
     if (shouldAuditWithSol) {
       solAudits += 1;
       try {
-        const audited = await solAuditOne(candidate, luna);
+        const audited = await solAuditOne(candidate, luna, getVinCache(state, candidate));
         if (audited) {
           finalAnalysis = audited;
           solAuditOk = true;
@@ -1122,6 +1310,7 @@ try {
     }
 
     const a = finalAnalysis;
+    updateVinCache(state, a, nowIso);
     const score = weightedScore(a);
     const item = watch[candidate.candidate_key] || {};
 
