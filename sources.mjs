@@ -394,7 +394,7 @@ async function fetchTelegramPages(channel, url, errors, cursor = {}) {
     seenSignatures.add(signature);
     pages.push(html);
     newestSeen = Math.max(newestSeen, highest);
-    return { html, lowest, highest };
+    return { html, lowest, highest, count: ids.length };
   }
 
   try {
@@ -408,6 +408,28 @@ async function fetchTelegramPages(channel, url, errors, cursor = {}) {
           pending_high_water: pendingHighWater,
           backfill_before: backfillBefore,
         },
+      };
+    }
+
+    // A brand-new source gets a small one-time historical seed so adding a channel
+    // does not start from only the current Telegram page.
+    if (oldHighWater === 0 && pendingHighWater === 0 && backfillBefore === 0) {
+      let rawCount = Number(latest.count || 0);
+      let cursorBefore = latest.lowest;
+      while (pageBudget > 0 && rawCount < 30) {
+        const page = await grab(url + "?before=" + cursorBefore);
+        if (!page) break;
+        rawCount += Number(page.count || 0);
+        cursorBefore = page.lowest;
+      }
+      return {
+        pages,
+        cursor: {
+          high_water: newestSeen,
+          pending_high_water: 0,
+          backfill_before: 0,
+        },
+        initial_backfill_posts: rawCount,
       };
     }
 
