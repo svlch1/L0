@@ -74,7 +74,9 @@ const TELEGRAM_FEEDS = [
   { channel: "isAuto99", label: "IsAuto", url: "https://t.me/s/isAuto99" },
   { channel: "imperiya_auto", label: "Imperiya", url: "https://t.me/s/imperiya_auto" },
   { channel: "grand_the_auto_13", label: "Grand Auto", url: "https://t.me/s/grand_the_auto_13" },
-  { channel: "autobazarkyiv1", label: "Автобазар Київ", url: "https://t.me/s/autobazarkyiv1" },
+  { channel: "avtodnipro", label: "Автобазар Дніпро", url: "https://t.me/s/avtodnipro" },
+  { channel: "karavan_auto_Dnepr", label: "Karavan Дніпро", url: "https://t.me/s/karavan_auto_Dnepr" },
+  { channel: "hapai_avto", label: "Hapai Auto", url: "https://t.me/s/hapai_avto" },
   { channel: "griznes_auto", label: "Griznes Auto", url: "https://t.me/s/griznes_auto" },
 ];
 
@@ -124,6 +126,11 @@ function extractTelegramPriceUsd(text) {
   }
 
   for (const m of s.matchAll(/(?:нова\s+ціна|новая\s+цена|ціна\s+для\s+підписників|цена\s+для\s+подписчиков|ціна|цена)\s*[:\-–—]?\s*\$?\s*(\d{1,3}(?:[ .,]\d{3})+|\d{4,6})\s*\$?/gi)) {
+    const n = Number(m[1].replace(/[ .,]/g, ""));
+    if (n >= 3000 && n <= 300000) values.push(n);
+  }
+
+  for (const m of s.matchAll(/(?:💸|💰|💵|🎁)\s*(\d{1,3}(?:[ .,]\d{3})+|\d{4,6})\s*(?:\$|💸|💰|💵|🎁)/gu)) {
     const n = Number(m[1].replace(/[ .,]/g, ""));
     if (n >= 3000 && n <= 300000) values.push(n);
   }
