@@ -1,5 +1,4 @@
 const AUTO_RIA_SEARCHES = [
-  // Core: максимально близко к тому, что ты ищешь.
   "https://auto.ria.com/uk/car/infiniti/q60/price/25000/amp/",
   "https://auto.ria.com/uk/car/infiniti/q50/price/25000/amp/",
   "https://auto.ria.com/uk/car/bmw/2-series/price/25000/amp/",
@@ -15,8 +14,6 @@ const AUTO_RIA_SEARCHES = [
   "https://auto.ria.com/uk/car/audi/s5/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/tt/price/25000/amp/",
   "https://auto.ria.com/uk/car/genesis/g70/price/25000/amp/",
-
-  // Exploration: могут быть менее очевидны, но сильная цена/комплектация должна иметь шанс.
   "https://auto.ria.com/uk/car/bmw/5-series/price/25000/amp/",
   "https://auto.ria.com/uk/car/bmw/6-series-gran-coupe/price/25000/amp/",
   "https://auto.ria.com/uk/car/mercedes-benz/e-class/price/25000/amp/",
@@ -37,8 +34,19 @@ const AUTO_RIA_SEARCHES = [
   "https://auto.ria.com/uk/car/nissan/370z/price/25000/amp/"
 ];
 
+// Every run also scans a few broad brand pages. This lets the bot discover
+// unexpected models without feeding the whole AUTO.RIA market to OpenAI.
+const EXPLORATION_BRANDS = [
+  ["bmw", "mercedes-benz", "audi"],
+  ["lexus", "infiniti", "genesis"],
+  ["cadillac", "acura", "jaguar"],
+  ["alfa-romeo", "volvo", "porsche"],
+  ["ford", "chevrolet", "dodge"],
+  ["kia", "nissan", "maserati"]
+];
+
 const AUTO_RIA_PAGES_PER_MODEL = 2;
-const TELEGRAM_MAX_PAGES = 6;
+const TELEGRAM_MAX_PAGES = 20;
 const HTTP_CONCURRENCY = 8;
 
 const TELEGRAM_FEEDS = [
@@ -97,12 +105,73 @@ function extractVin(text) {
   return vins[0] || "";
 }
 
+function extractYear(text) {
+  const years = [...String(text).matchAll(/\b(20(?:0[8-9]|1\d|2[0-6]))\b/g)]
+    .map((m) => Number(m[1]));
+  return years[0] || 0;
+}
+
 function extractDate(text) {
   const dates = [...String(text).matchAll(/\b([0-3]?\d)\.([01]?\d)\.(20\d{2})\b/g)];
   if (!dates.length) return "";
   const m = dates.at(-1);
   const d = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])));
   return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+function modelHintFromSearchUrl(searchUrl) {
+  try {
+    const parts = new URL(searchUrl).pathname.split("/").filter(Boolean);
+    const car = parts.indexOf("car");
+    const price = parts.indexOf("price");
+    if (car < 0 || price < 0 || price <= car + 1) return "";
+    const bits = parts.slice(car + 1, price);
+    return bits.length >= 2 ? bits.slice(0, 2).join("/") : "";
+  } catch {
+    return "";
+  }
+}
+
+function median(values) {
+  const xs = values.map(Number).filter((x) => x > 0).sort((a, b) => a - b);
+  if (!xs.length) return 0;
+  const mid = Math.floor(xs.length / 2);
+  return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
+}
+
+function annotatePriceAnomalies(items) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!item.model_hint || !item.model_hint.includes("/")) continue;
+    if (!groups.has(item.model_hint)) groups.set(item.model_hint, []);
+    groups.get(item.model_hint).push(item);
+  }
+
+  for (const item of items) {
+    const group = groups.get(item.model_hint) || [];
+    if (!item.price_hint_usd || group.length < 4) continue;
+
+    let peers = group.filter((p) => {
+      if (!p.price_hint_usd) return false;
+      const yearOk = !item.year_hint || !p.year_hint || Math.abs(item.year_hint - p.year_hint) <= 2;
+      const mileageOk =
+        !item.mileage_hint_km ||
+        !p.mileage_hint_km ||
+        Math.abs(item.mileage_hint_km - p.mileage_hint_km) <= 40000;
+      return yearOk && mileageOk;
+    });
+
+    if (peers.length < 4) peers = group.filter((p) => p.price_hint_usd > 0);
+    if (peers.length < 4) continue;
+
+    const med = median(peers.map((p) => p.price_hint_usd));
+    if (!med) continue;
+
+    item.market_median_hint_usd = Math.round(med);
+    item.price_anomaly_pct = Math.round(((med - item.price_hint_usd) / med) * 1000) / 10;
+  }
+
+  return items;
 }
 
 async function fetchHtml(url) {
@@ -139,14 +208,31 @@ async function mapLimit(items, limit, worker) {
   return out;
 }
 
-function autoRiaPageUrls() {
-  return AUTO_RIA_SEARCHES.flatMap((base) => {
-    const urls = [base];
+function explorationUrls(state) {
+  const run = Number(state?.completed_runs || 0);
+  const group = EXPLORATION_BRANDS[run % EXPLORATION_BRANDS.length] || EXPLORATION_BRANDS[0];
+  return group.map((brand) => ({
+    brand,
+    url: `https://auto.ria.com/uk/car/${brand}/price/25000/amp/`
+  }));
+}
+
+function autoRiaPageUrls(state) {
+  const core = AUTO_RIA_SEARCHES.flatMap((base) => {
+    const urls = [{ url: base, exploration: false }];
     for (let page = 2; page <= AUTO_RIA_PAGES_PER_MODEL; page++) {
-      urls.push(base + "?page=" + page);
+      urls.push({ url: base + "?page=" + page, exploration: false });
     }
     return urls;
   });
+
+  const exploration = explorationUrls(state).map((x) => ({
+    url: x.url,
+    exploration: true,
+    exploration_brand: x.brand,
+  }));
+
+  return { core, exploration, all: [...core, ...exploration] };
 }
 
 function telegramPostIds(html, channel) {
@@ -155,9 +241,10 @@ function telegramPostIds(html, channel) {
     .filter(Number.isFinite);
 }
 
-async function fetchTelegramPages(channel, url, errors) {
+async function fetchTelegramPages(channel, url, errors, lastSeenId = 0) {
   const pages = [];
   let nextUrl = url;
+  let highestSeen = 0;
   const seenPageStarts = new Set();
 
   for (let page = 0; page < TELEGRAM_MAX_PAGES; page++) {
@@ -168,11 +255,17 @@ async function fetchTelegramPages(channel, url, errors) {
 
       const lowest = Math.min(...ids);
       const highest = Math.max(...ids);
+      highestSeen = Math.max(highestSeen, highest);
+
       const signature = highest + ":" + lowest;
       if (seenPageStarts.has(signature)) break;
       seenPageStarts.add(signature);
-
       pages.push(html);
+
+      // Once the page overlaps the high-water mark from the previous run,
+      // we have covered every post published since then.
+      if (lastSeenId > 0 && lowest <= lastSeenId) break;
+
       nextUrl = url + "?before=" + lowest;
     } catch (error) {
       errors.push(`Telegram ${channel} page ${page + 1}: ${String(error?.message || error)}`);
@@ -180,29 +273,30 @@ async function fetchTelegramPages(channel, url, errors) {
     }
   }
 
-  return pages;
+  return { pages, highest_seen: highestSeen };
 }
 
-function autoRiaCards(html, searchUrl) {
+function autoRiaCards(html, searchUrl, exploration = false) {
   const matches = [...html.matchAll(/href=["']([^"']*\/auto_[^"']+?\.html(?:\?[^"']*)?)["']/gi)];
   const out = [];
   const seen = new Set();
+  const modelHint = exploration ? "" : modelHintFromSearchUrl(searchUrl);
 
   for (const m of matches) {
     let href = m[1].replace(/&amp;/g, "&");
     if (href.startsWith("/")) href = "https://auto.ria.com" + href;
     if (!href.startsWith("http")) continue;
+
     const url = normalizeUrl(href);
     if (seen.has(url)) continue;
     seen.add(url);
 
     const start = Math.max(0, m.index - 1800);
     const end = Math.min(html.length, m.index + 5200);
-    const text = decodeHtml(html.slice(start, end)).slice(0, 2200);
+    const text = decodeHtml(html.slice(start, end)).slice(0, 2400);
     const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
 
-    // Search page is already capped by price; this only removes obvious bad matches.
     if (price && price > 27000) continue;
     if (mileage && mileage > 115000) continue;
 
@@ -214,7 +308,12 @@ function autoRiaCards(html, searchUrl) {
       vin_hint: extractVin(text),
       price_hint_usd: price,
       mileage_hint_km: mileage,
+      year_hint: extractYear(text),
+      model_hint: modelHint,
       published_at_hint: extractDate(text),
+      market_median_hint_usd: 0,
+      price_anomaly_pct: 0,
+      exploration,
       raw_text: text,
       search_url: searchUrl,
     });
@@ -248,7 +347,12 @@ function telegramPosts(html, channel) {
       vin_hint: extractVin(text),
       price_hint_usd: price,
       mileage_hint_km: mileage,
+      year_hint: extractYear(text),
+      model_hint: "",
       published_at_hint: "",
+      market_median_hint_usd: 0,
+      price_anomaly_pct: 0,
+      exploration: false,
       raw_text: text,
     });
   }
@@ -256,107 +360,115 @@ function telegramPosts(html, channel) {
   return out;
 }
 
-function watchedUrls(state) {
-  return new Set(
-    Object.values(state?.market_watch || {})
-      .flatMap((x) => [x?.auto_ria_url, x?.telegram_url, x?.source_url])
-      .filter(Boolean)
-      .map(normalizeUrl)
-  );
-}
-
 function existingSourceSeen(state) {
   return new Set((state?.source_seen_urls || []).map(normalizeUrl));
 }
 
+function watchByUrl(state) {
+  const map = new Map();
+  for (const item of Object.values(state?.market_watch || {})) {
+    for (const url of [item?.source_url, item?.auto_ria_url, item?.telegram_url]) {
+      if (url) map.set(normalizeUrl(url), item);
+    }
+  }
+  return map;
+}
+
 export async function collectDirectSources(state = {}) {
   const seen = existingSourceSeen(state);
-  const watched = watchedUrls(state);
-  const observed = new Set();
+  const watched = watchByUrl(state);
   const errors = [];
-  let autoItems = [];
-
-  const autoUrls = autoRiaPageUrls();
+  const pages = autoRiaPageUrls(state);
   let autoPagesScanned = 0;
-  const autoResults = await mapLimit(autoUrls, HTTP_CONCURRENCY, async (url) => {
+
+  const autoResults = await mapLimit(pages.all, HTTP_CONCURRENCY, async (page) => {
     try {
-      const html = await fetchHtml(url);
+      const html = await fetchHtml(page.url);
       autoPagesScanned += 1;
-      return autoRiaCards(html, url);
+      return autoRiaCards(html, page.url, Boolean(page.exploration));
     } catch (error) {
       const message = String(error?.message || error);
-      // 404 на ?page=2 означает, что у модели просто нет второй страницы.
-      if (!(url.includes("?page=") && message.includes("HTTP 404"))) {
-        errors.push(`AUTO.RIA ${url}: ${message}`);
+      if (!(page.url.includes("?page=") && message.includes("HTTP 404"))) {
+        errors.push(`AUTO.RIA ${page.url}: ${message}`);
       }
       return [];
     }
   });
 
-  for (const group of autoResults) {
-    for (const item of group) {
-      const url = normalizeUrl(item.source_url);
-      observed.add(url);
-      if (!seen.has(url) || watched.has(url)) autoItems.push(item);
-    }
-  }
-
-  // Prefer freshest cards where AUTO.RIA exposes a date, then low-mileage/known-price items.
-  autoItems.sort((a, b) => {
-    const ad = a.published_at_hint ? Date.parse(a.published_at_hint) : 0;
-    const bd = b.published_at_hint ? Date.parse(b.published_at_hint) : 0;
-    if (bd !== ad) return bd - ad;
-    const am = a.mileage_hint_km || 999999;
-    const bm = b.mileage_hint_km || 999999;
-    return am - bm;
-  });
-
-  const byUrl = new Map();
-  for (const item of autoItems) {
+  const allAuto = annotatePriceAnomalies(autoResults.flat());
+  const autoByUrl = new Map();
+  for (const item of allAuto) {
     const key = normalizeUrl(item.source_url);
-    if (!byUrl.has(key)) byUrl.set(key, item);
+    const previous = autoByUrl.get(key);
+    // Prefer a core-model card over the same car found via a broad exploration page.
+    if (!previous || (previous.exploration && !item.exploration)) autoByUrl.set(key, item);
   }
-  autoItems = [...byUrl.values()].slice(0, 24);
 
-  let telegramItems = [];
+  const highWater = state?.telegram_high_water || {};
   const tgResults = await Promise.all(
     TELEGRAM_FEEDS.map(async ({ channel, url }) => {
-      const pages = await fetchTelegramPages(channel, url, errors);
+      const fetched = await fetchTelegramPages(channel, url, errors, Number(highWater[channel] || 0));
       const byUrl = new Map();
 
-      for (const html of pages) {
+      for (const html of fetched.pages) {
         for (const item of telegramPosts(html, channel)) {
           const key = normalizeUrl(item.source_url);
           if (!byUrl.has(key)) byUrl.set(key, item);
         }
       }
 
-      return { items: [...byUrl.values()], pages_scanned: pages.length };
+      return {
+        channel,
+        items: [...byUrl.values()],
+        pages_scanned: fetched.pages.length,
+        highest_seen: fetched.highest_seen,
+      };
     })
   );
 
-  for (const group of tgResults) {
-    for (const item of group.items) {
-      const normalized = normalizeUrl(item.source_url);
-      observed.add(normalized);
-      if (!seen.has(normalized)) telegramItems.push(item);
+  const allTelegram = tgResults.flatMap((g) => g.items);
+  const allByUrl = new Map([...autoByUrl.entries()]);
+  for (const item of allTelegram) {
+    const key = normalizeUrl(item.source_url);
+    if (!allByUrl.has(key)) allByUrl.set(key, item);
+  }
+
+  const pool = [];
+  const priceChangedItems = [];
+
+  for (const [url, item] of allByUrl.entries()) {
+    const watchedItem = watched.get(url);
+    if (!seen.has(url)) {
+      pool.push(item);
+      continue;
+    }
+
+    if (watchedItem) {
+      const oldPrice = Number(watchedItem.last_price_usd || 0);
+      const newPrice = Number(item.price_hint_usd || 0);
+      if (oldPrice > 0 && newPrice > 0 && oldPrice !== newPrice) {
+        priceChangedItems.push(item);
+      }
     }
   }
 
-  telegramItems = telegramItems
-    .sort((a, b) => Number(b.source_url.match(/\/(\d+)$/)?.[1] || 0) - Number(a.source_url.match(/\/(\d+)$/)?.[1] || 0))
-    .slice(0, 12);
-
-  const items = [...autoItems, ...telegramItems].slice(0, 32);
+  const autoPoolCount = pool.filter((x) => x.source === "AUTO.RIA").length;
+  const telegramPoolCount = pool.length - autoPoolCount;
 
   return {
-    items,
-    observed_urls: [...observed],
+    pool,
+    price_changed_items: priceChangedItems,
+    telegram_high_water: Object.fromEntries(
+      tgResults.map((g) => [g.channel, Math.max(Number(highWater[g.channel] || 0), Number(g.highest_seen || 0))])
+    ),
+    exploration_brands: explorationUrls(state).map((x) => x.brand),
     stats: {
-      auto_ria_candidates: autoItems.length,
-      telegram_candidates: telegramItems.length,
-      total_candidates: items.length,
+      auto_ria_candidates: autoPoolCount,
+      telegram_candidates: telegramPoolCount,
+      total_candidates: pool.length,
+      price_changed_candidates: priceChangedItems.length,
       auto_ria_models: AUTO_RIA_SEARCHES.length,
+      exploration_brands: explorationUrls(state).map((x) => x.brand),
       auto_ria_pages_scanned: autoPagesScanned,
       telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
       source_errors: errors.length,
@@ -368,5 +480,5 @@ export async function collectDirectSources(state = {}) {
 export function commitObservedUrls(state, observedUrls = []) {
   state.source_seen_urls = [
     ...new Set([...(state.source_seen_urls || []), ...observedUrls.map(normalizeUrl)])
-  ].slice(-3000);
+  ].slice(-5000);
 }
