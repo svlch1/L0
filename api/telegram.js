@@ -97,12 +97,12 @@ function almostText(state) {
 }
 
 function statusText(state) {
-  let result = "ещё нет завершённых проверок";
+  let result = "ещё не было завершённой проверки";
 
   if (state.last_check_status === "no_gem") {
-    result = "ничего достойного не найдено";
+    result = "ГЕМов не найдено";
   } else if (state.last_check_status === "found") {
-    result = `найдено и показано: ${state.last_sent_count || 0}`;
+    result = `найдено ГЕМов: ${state.last_sent_count || 0}`;
   } else if (state.last_check_status === "error") {
     result = `ошибка: ${state.last_error || "неизвестная"}`;
   }
@@ -110,31 +110,59 @@ function statusText(state) {
   const healthy = state.last_check_status !== "error";
   const usage = state.last_api_usage || null;
   const today = state.api_usage_today || null;
-  const lunaCalls = Number(usage?.by_model?.["gpt-6-luna"]?.calls || 0);
-  const solCalls = Number(usage?.by_model?.["gpt-6.1-sol"]?.calls || 0);
   const collector = state.last_collector_stats || {};
+  const almostCount = Object.values(state.almost_gems_by_key || {})
+    .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
+    .length;
+  const watchCount = Object.keys(state.market_watch || {}).length;
+  const vinCacheCount = Object.keys(state.vin_cache || {}).length;
+  const modelCount = Number(collector.auto_ria_models || 33);
 
   return [
     healthy ? "🟢 Car Gem Scout работает" : "🔴 Car Gem Scout: есть ошибка",
+    "Ищу эффектные премиум/спорт авто примерно до $25k. Настоящий ГЕМ — итоговый рейтинг от 8.5/10 и уверенность от 70%.",
     "",
-    "⏱ Режим: каждые 4 часа / 6 раз в сутки",
-    `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
-    `🔎 Результат: ${result}`,
-    collector.auto_ria_models ? `🗺 Покрытие: AUTO.RIA ${collector.auto_ria_models} моделей / ${collector.auto_ria_pages_scanned || 0} страниц; Telegram ${collector.telegram_pages_scanned || 0} страниц` : null,
-    `🧲 Кандидатов в последнем discovery: ${state.last_discovered_count || 0}`,
-    `🔬 Luna deep-analysis: ${state.last_deep_analyzed_count || 0}`,
-    `🧠 Sol final audit: ${state.last_sol_audits || 0}`,
-    `👀 Машин под price-watch: ${Object.keys(state.market_watch || {}).length}`,
-    `📊 Всего показано гемов: ${state.total_gems_sent || 0}`,
-    usage ? `💸 API последний проход: ~${usd(usage.estimated_cost_usd)} (Luna ${lunaCalls} / Sol ${solCalls})` : "💸 API последний проход: учёт включится со следующего прохода",
-    usage ? `🪙 Tokens: in ${compactTokens(usage.input_tokens)} / out ${compactTokens(usage.output_tokens)} / web ${usage.web_search_calls || 0}` : null,
-    today ? `📅 API сегодня (учтено ботом): ~${usd(today.estimated_cost_usd)}` : null,
-    `🔁 Завершённых проходов: ${state.completed_runs || 0}`,
-    `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
+    "⏱ Расписание",
+    "• Проверка рынка: каждые 4 часа / 6 раз в сутки",
+    `• Последняя проверка: ${formatKyiv(state.last_check_at)}`,
+    `• Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
+    `• Итог последней проверки: ${result}`,
     "",
-    "Источники: AUTO.RIA + KIEVAVTO + IsAuto",
-    "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
-    "Команды: /status · /almost",
+    "🔎 Что произошло в последнем проходе",
+    `• После первичного отбора осталось кандидатов: ${state.last_discovered_count || 0}`,
+    `• Глубоко проверено Luna: ${state.last_deep_analyzed_count || 0}`,
+    `• Финально перепроверено сильных кандидатов: ${state.last_sol_audits || 0}`,
+    `• Почти гемов 7.8–8.4 в базе: ${almostCount}`,
+    `• Машин под наблюдением за ценой: ${watchCount}`,
+    `• Ждут первичного просмотра: ${state.last_source_queue_count || 0}`,
+    `• Ценовых аномалий >=10% в последнем пакете: ${state.last_price_anomaly_count || 0}`,
+    `• VIN-историй сохранено: ${vinCacheCount}`,
+    "",
+    "🗺 Где бот ищет",
+    `• AUTO.RIA: ${modelCount} целевых моделей + ротационный широкий поиск по брендам`,
+    "• Telegram: KIEVAVTO + IsAuto, с пролистыванием назад до уже просмотренных постов",
+    state.last_exploration_brands?.length
+      ? `• Последний широкий поиск: ${state.last_exploration_brands.join(", ")}`
+      : null,
+    "",
+    "💸 Расход OpenAI API",
+    usage
+      ? `• Последний проход: ~${usd(usage.estimated_cost_usd)}`
+      : "• Учёт стоимости начнётся с первого прохода новой версии",
+    today ? `• Сегодня, учтено ботом: ~${usd(today.estimated_cost_usd)}` : null,
+    usage
+      ? `• Токены: вход ${compactTokens(usage.input_tokens)} / выход ${compactTokens(usage.output_tokens)} / web-поиск ${usage.web_search_calls || 0}`
+      : null,
+    "",
+    "ℹ️ Luna — недорогая модель OpenAI, которой бот делает глубокую проверку кандидатов. Более дорогая финальная модель включается только для действительно сильных вариантов.",
+    "",
+    "📊 Всего отправлено ГЕМов: " + Number(state.total_gems_sent || 0),
+    "🔁 Завершённых проходов: " + Number(state.completed_runs || 0),
+    "",
+    "⌨️ Команды",
+    "/status — текущий статус и статистика",
+    "/almost — машины с рейтингом 7.8–8.4",
+    "/start — показать статус / проверить бота",
   ].filter(Boolean).join("\n");
 }
 
