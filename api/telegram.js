@@ -112,6 +112,7 @@ function statusText(state) {
   const today = state.api_usage_today || null;
   const lunaCalls = Number(usage?.by_model?.["gpt-6-luna"]?.calls || 0);
   const solCalls = Number(usage?.by_model?.["gpt-6.1-sol"]?.calls || 0);
+  const collector = state.last_collector_stats || {};
 
   return [
     healthy ? "🟢 Car Gem Scout работает" : "🔴 Car Gem Scout: есть ошибка",
@@ -119,6 +120,7 @@ function statusText(state) {
     "⏱ Режим: каждые 4 часа / 6 раз в сутки",
     `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
     `🔎 Результат: ${result}`,
+    collector.auto_ria_models ? `🗺 Покрытие: AUTO.RIA ${collector.auto_ria_models} моделей / ${collector.auto_ria_pages_scanned || 0} страниц; Telegram ${collector.telegram_pages_scanned || 0} страниц` : null,
     `🧲 Кандидатов в последнем discovery: ${state.last_discovered_count || 0}`,
     `🔬 Luna deep-analysis: ${state.last_deep_analyzed_count || 0}`,
     `🧠 Sol final audit: ${state.last_sol_audits || 0}`,
