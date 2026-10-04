@@ -473,9 +473,18 @@ function watchByUrl(state) {
   return map;
 }
 
+function sourcePriceByUrl(state) {
+  const map = new Map();
+  for (const [url, item] of Object.entries(state?.source_price_watch || {})) {
+    map.set(normalizeUrl(url), item);
+  }
+  return map;
+}
+
 export async function collectDirectSources(state = {}) {
   const seen = existingSourceSeen(state);
   const watched = watchByUrl(state);
+  const sourcePrices = sourcePriceByUrl(state);
   const errors = [];
   const pages = autoRiaPageUrls(state);
   let autoPagesScanned = 0;
@@ -551,11 +560,19 @@ export async function collectDirectSources(state = {}) {
       continue;
     }
 
-    if (watchedItem) {
-      const oldPrice = Number(watchedItem.last_price_usd || 0);
-      const newPrice = Number(item.price_hint_usd || 0);
-      if (oldPrice > 0 && newPrice > 0 && oldPrice !== newPrice) {
-        priceChangedItems.push(item);
+    const sourcePrice = sourcePrices.get(url);
+    const oldPrice = Number(watchedItem?.last_price_usd || sourcePrice?.last_price_usd || 0);
+    const newPrice = Number(item.price_hint_usd || 0);
+    if (oldPrice > 0 && newPrice > 0 && newPrice < oldPrice) {
+      const dropUsd = oldPrice - newPrice;
+      const dropPct = (dropUsd / oldPrice) * 100;
+      if (dropUsd >= 1000 || dropPct >= 5) {
+        priceChangedItems.push({
+          ...item,
+          previous_source_price_usd: oldPrice,
+          source_price_drop_usd: Math.round(dropUsd),
+          source_price_drop_pct: Math.round(dropPct * 10) / 10,
+        });
       }
     }
   }
