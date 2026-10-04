@@ -7,13 +7,406 @@
     "data": "g0aYbnq4a11+"
   },
   "telegram_update_offset": 792178534,
-  "last_check_at": "2026-10-04T18:55:32.049Z",
+  "last_check_at": "2026-10-04T18:59:37.044Z",
   "last_check_status": "error",
-  "last_error": "Unterminated string in JSON at position 6877 (line 131 column 67)",
-  "completed_runs": 2,
+  "last_error": "fetch failed",
+  "completed_runs": 3,
   "last_found_count": 0,
   "last_sent_count": 0,
   "total_gems_sent": 0,
   "last_test_at": "2026-10-04T18:11:22.338Z",
-  "market_watch": {}
+  "market_watch": {
+    "VIN:JN1EV7JK3NM600451": {
+      "key": "VIN:JN1EV7JK3NM600451",
+      "model": "Infiniti Q60 3.0t Sport+Navi",
+      "year": 2021,
+      "vin": "JN1EV7JK3NM600451",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_39259678.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_39259678.html",
+      "telegram_url": "",
+      "mileage_km": 30000,
+      "engine": "3.0 бензин twin-turbo; в модификации указано 304 л.с.",
+      "transmission": "Автомат",
+      "drive": "Противоречие: AWD в модификации, задний в характеристиках",
+      "seller_type": "Частный продавец",
+      "listing_note": "Проверено 04.10.2026; объявление датировано 03.10.2026. Продавец заявляет небольшое повреждение в США и восстановление оригинальными деталями; есть торг. Год и привод необходимо уточнить на втором этапе. Доступность объявления не означает подтверждённого продавцом наличия. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_39259678.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 22900,
+      "lowest_price_usd": 22900,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 22900
+        }
+      ]
+    },
+    "VIN:JN1FV7LK4MM530006": {
+      "key": "VIN:JN1FV7LK4MM530006",
+      "model": "Infiniti Q60 S 3.0 Sport+Navi",
+      "year": 2020,
+      "vin": "JN1FV7LK4MM530006",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_40509269.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_40509269.html",
+      "telegram_url": "",
+      "mileage_km": 37000,
+      "engine": "3.0 бензин twin-turbo; модификация S 405 л.с.",
+      "transmission": "Автомат",
+      "drive": "Противоречие: полный в описании, задний в характеристиках",
+      "seller_type": "Автоплощадка",
+      "listing_note": "Карточка доступна при проверке 04.10.2026. США, отмечено ДТП. Заявлены Bose Performance, камеры 360, адаптивный круиз, люк и дистанционный запуск. Комплектация и привод требуют уточнения. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_40509269.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 22000,
+      "lowest_price_usd": 22000,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 22000
+        }
+      ]
+    },
+    "VIN:JN1EV7EL5JM392537": {
+      "key": "VIN:JN1EV7EL5JM392537",
+      "model": "Infiniti Q60 3.0 Bi-turbo",
+      "year": 2018,
+      "vin": "JN1EV7EL5JM392537",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_40501280.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_40501280.html",
+      "telegram_url": "",
+      "mileage_km": 63000,
+      "engine": "3.0 бензин twin-turbo",
+      "transmission": "Автомат",
+      "drive": "Полный, по описанию",
+      "seller_type": "Автоплощадка Autotrade Kyiv",
+      "listing_note": "Объявление датировано 30.09.2026, карточка доступна 04.10.2026. Заявлены обслуживание, Bose Performance, CarPlay, люк и подогрев руля. Отмечено ДТП в США. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_40501280.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 19500,
+      "lowest_price_usd": 19500,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 19500
+        }
+      ]
+    },
+    "VIN:JN1EV7EL8JM391057": {
+      "key": "VIN:JN1EV7EL8JM391057",
+      "model": "Infiniti Q60 3.0 AWD Sport+Navi",
+      "year": 2017,
+      "vin": "JN1EV7EL8JM391057",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_40059147.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_40059147.html",
+      "telegram_url": "",
+      "mileage_km": 55000,
+      "engine": "3.0 бензин twin-turbo; модификация 304 л.с.",
+      "transmission": "Автомат",
+      "drive": "Полный",
+      "seller_type": "Дилер AutoPodium",
+      "listing_note": "Объявление датировано 21.09.2026, доступно 04.10.2026. Есть торг. Заявлены спортивный выхлоп, карбоновые элементы, бронеплёнка и история обслуживания. В поле мощности очевидная ошибка — 1573,67 л.с.; не использовать её как характеристику. Отмечено ДТП. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_40059147.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 16500,
+      "lowest_price_usd": 16500,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 16500
+        }
+      ]
+    },
+    "VIN:JN1EV7EL7HM551830": {
+      "key": "VIN:JN1EV7EL7HM551830",
+      "model": "Infiniti Q60 3.0 AWD Sport+Navi",
+      "year": 2016,
+      "vin": "JN1EV7EL7HM551830",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_40004786.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_40004786.html",
+      "telegram_url": "",
+      "mileage_km": 39000,
+      "engine": "3.0 бензин twin-turbo, 304 л.с. по карточке",
+      "transmission": "Автомат",
+      "drive": "Полный",
+      "seller_type": "Профессиональный продавец",
+      "listing_note": "Карточка доступна 04.10.2026; объявление датировано 12.09.2026. Текущая цена $17 тыс., зачёркнутая — $21 тыс. Заявлены шесть лет в одних руках и эксплуатация как автомобиля выходного дня; есть торг. Отмечено ДТП. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_40004786.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 17000,
+      "lowest_price_usd": 17000,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 17000
+        }
+      ]
+    },
+    "VIN:JN1FV7EK5HM610448": {
+      "key": "VIN:JN1FV7EK5HM610448",
+      "model": "Infiniti Q60 S Red Sport",
+      "year": 2016,
+      "vin": "JN1FV7EK5HM610448",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_40222010.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_40222010.html",
+      "telegram_url": "",
+      "mileage_km": 50000,
+      "engine": "3.0 бензин twin-turbo, 405 л.с. по карточке",
+      "transmission": "Автомат",
+      "drive": "Задний",
+      "seller_type": "Профессиональный продавец",
+      "listing_note": "Объявление датировано 27.09.2026, доступно 04.10.2026. Продавец заявляет оригинальные запчасти при ремонте и новую Michelin Pilot Sport 5. США, отмечено ДТП; глубина повреждений не оценивалась. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_40222010.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 21000,
+      "lowest_price_usd": 21000,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 21000
+        }
+      ]
+    },
+    "VIN:JN1EV7EK5HM361399": {
+      "key": "VIN:JN1EV7EK5HM361399",
+      "model": "Infiniti Q60 S 3.0 Sport+Navi",
+      "year": 2016,
+      "vin": "JN1EV7EK5HM361399",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_39309320.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_39309320.html",
+      "telegram_url": "",
+      "mileage_km": 77000,
+      "engine": "3.0 бензин twin-turbo; 405 л.с. указаны продавцом",
+      "transmission": "Автомат",
+      "drive": "Задний",
+      "seller_type": "Профессиональный продавец; в описании заявлено собственное авто",
+      "listing_note": "Объявление датировано 30.09.2026, доступно 04.10.2026. Есть торг и готовность к СТО. Заявлены бережная эксплуатация и большое ТО в мае. США, отмечено ДТП. Подлинность S-версии и мощности пока не подтверждена. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_39309320.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 18700,
+      "lowest_price_usd": 18700,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 18700
+        }
+      ]
+    },
+    "VIN:JN1FV7EK3LM400259": {
+      "key": "VIN:JN1FV7EK3LM400259",
+      "model": "Infiniti Q60 S 3.0 Sport+Navi",
+      "year": 2019,
+      "vin": "JN1FV7EK3LM400259",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_infiniti_q60_40154097.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_infiniti_q60_40154097.html",
+      "telegram_url": "",
+      "mileage_km": 24000,
+      "engine": "3.0 бензин twin-turbo, 405 л.с. по карточке",
+      "transmission": "Автомат",
+      "drive": "Задний",
+      "seller_type": "",
+      "listing_note": "Карточка доступна при проверке 04.10.2026; объявление датировано 18.09.2026. Указан торг — поэтому оставлена выше основного бюджета. Продавец заявляет полное восстановление после США. Отмечено ДТП; год и комплектацию нужно сверить отдельно. ([auto.ria.com](https://auto.ria.com/uk/auto_infiniti_q60_40154097.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 25500,
+      "lowest_price_usd": 25500,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 25500
+        }
+      ]
+    },
+    "VIN:WBA4W7C02LFJ74817": {
+      "key": "VIN:WBA4W7C02LFJ74817",
+      "model": "BMW 440i Coupe F32",
+      "year": 2020,
+      "vin": "WBA4W7C02LFJ74817",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_bmw_4_series_40502211.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_bmw_4_series_40502211.html",
+      "telegram_url": "",
+      "mileage_km": 49000,
+      "engine": "3.0 бензин; заявлены Stage 2 и 600 л.с.",
+      "transmission": "Автомат Steptronic",
+      "drive": "Задний",
+      "seller_type": "",
+      "listing_note": "Объявление датировано 30.09.2026, доступно 04.10.2026. Продавец заявляет полное ТО на 49 тыс. км и готовность к проверкам. Существенный тюнинг — отдельный флаг для второго этапа, а не подтверждённые 600 л.с. Отмечено ДТП в США. ([auto.ria.com](https://auto.ria.com/uk/auto_bmw_4_series_40502211.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 23000,
+      "lowest_price_usd": 23000,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 23000
+        }
+      ]
+    },
+    "VIN:WBA4J5C55JBF06898": {
+      "key": "VIN:WBA4J5C55JBF06898",
+      "model": "BMW 440i Gran Coupe",
+      "year": 2017,
+      "vin": "WBA4J5C55JBF06898",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_bmw_4_series_40433175.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_bmw_4_series_40433175.html",
+      "telegram_url": "",
+      "mileage_km": 77000,
+      "engine": "2.98 бензин, 326 л.с. по карточке",
+      "transmission": "Автомат Steptronic",
+      "drive": "Задний",
+      "seller_type": "Автоплощадка; продажа от владельца по описанию",
+      "listing_note": "При открытии 04.10.2026 цена $24 900 вместо зачёркнутых $25 500; есть торг. Описание указывает Gran Coupe и пять дверей, хотя классификация страницы — F32. Заявлены M Package, Adaptive LED и ТО на 75 тыс. км. США, отмечено ДТП. ([auto.ria.com](https://auto.ria.com/uk/auto_bmw_4_series_40433175.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 24900,
+      "lowest_price_usd": 24900,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 24900
+        }
+      ]
+    },
+    "VIN:WAUTNAF55KA075648": {
+      "key": "VIN:WAUTNAF55KA075648",
+      "model": "Audi A5 Coupe 2.0 TFSI quattro Premium Plus S-line",
+      "year": 2019,
+      "vin": "WAUTNAF55KA075648",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_audi_a5_40196139.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_audi_a5_40196139.html",
+      "telegram_url": "",
+      "mileage_km": 63000,
+      "engine": "2.0 бензин TFSI, 252 л.с. по карточке",
+      "transmission": "7-ступенчатая S tronic",
+      "drive": "Полный quattro",
+      "seller_type": "",
+      "listing_note": "Карточка доступна 04.10.2026, в выдаче дата 03.10.2026. Заявлены внутренний и внешний S-line, Premium Plus, LED, CarPlay и трёхзонный климат. США, отмечено ДТП. ([auto.ria.com](https://auto.ria.com/uk/auto_audi_a5_40196139.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 21000,
+      "lowest_price_usd": 21000,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 21000
+        }
+      ]
+    },
+    "VIN:WDDSJ5CB7KN767954": {
+      "key": "VIN:WDDSJ5CB7KN767954",
+      "model": "Mercedes-Benz CLA 45 AMG 4MATIC",
+      "year": 2019,
+      "vin": "WDDSJ5CB7KN767954",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_mercedes_benz_cla_class_39411181.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_mercedes_benz_cla_class_39411181.html",
+      "telegram_url": "",
+      "mileage_km": 85000,
+      "engine": "1.99 бензин turbo, 381 л.с. по карточке",
+      "transmission": "Автомат DCT",
+      "drive": "Полный 4MATIC",
+      "seller_type": "Автосалон",
+      "listing_note": "Карточка доступна 04.10.2026, дата в выдаче 01.10.2026. Заявлены Harman Kardon, активный выхлоп, панорама, слепые зоны и LED High Performance. VIN/аукцион и состояние на discovery не проверялись глубоко. ([auto.ria.com](https://auto.ria.com/uk/auto_mercedes_benz_cla_class_39411181.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 22900,
+      "lowest_price_usd": 22900,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 22900
+        }
+      ]
+    },
+    "VIN:W1K5J4GB2MN191453": {
+      "key": "VIN:W1K5J4GB2MN191453",
+      "model": "Mercedes-Benz CLA 250 C118",
+      "year": 2020,
+      "vin": "W1K5J4GB2MN191453",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_mercedes_benz_cla_class_40377905.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_mercedes_benz_cla_class_40377905.html",
+      "telegram_url": "",
+      "mileage_km": 60000,
+      "engine": "1.99 бензин turbo; модификация 224 л.с.",
+      "transmission": "Автомат DCT",
+      "drive": "Передний",
+      "seller_type": "Автосалон Твоє Авто",
+      "listing_note": "Карточка доступна 04.10.2026, дата в выдаче 03.10.2026. Заявлены MBUX, цифровая приборка, CarPlay и подогрев сидений. США, отмечено ДТП. Поле двигателя противоречит модификации: 305 л.с. против 224 л.с.; мощность необходимо уточнить. ([auto.ria.com](https://auto.ria.com/uk/auto_mercedes_benz_cla_class_40377905.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 23990,
+      "lowest_price_usd": 23990,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 23990
+        }
+      ]
+    },
+    "VIN:JTHHA5BC3G5000395": {
+      "key": "VIN:JTHHA5BC3G5000395",
+      "model": "Lexus RC 200t F-Sport",
+      "year": 2016,
+      "vin": "JTHHA5BC3G5000395",
+      "source": "AUTO.RIA",
+      "source_url": "https://auto.ria.com/uk/auto_lexus_rc_40232166.html",
+      "auto_ria_url": "https://auto.ria.com/uk/auto_lexus_rc_40232166.html",
+      "telegram_url": "",
+      "mileage_km": 62000,
+      "engine": "2.0 бензин turbo; модификация 245 л.с.",
+      "transmission": "Автомат",
+      "drive": "Задний",
+      "seller_type": "Дилер BossAuto",
+      "listing_note": "Карточка доступна 04.10.2026, дата в выдаче 01.10.2026. США, отмечено ДТП. Дилер предлагает осмотр, тест-драйв и проверку на СТО; техническое описание ограничено. ([auto.ria.com](https://auto.ria.com/uk/auto_lexus_rc_40232166.html))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 23999,
+      "lowest_price_usd": 23999,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 23999
+        }
+      ]
+    },
+    "VIN:JN1EV7AR7JM444213": {
+      "key": "VIN:JN1EV7AR7JM444213",
+      "model": "Infiniti Q50 3.0 AWD",
+      "year": 2018,
+      "vin": "JN1EV7AR7JM444213",
+      "source": "IsAuto",
+      "source_url": "https://t.me/isAuto99/65006",
+      "auto_ria_url": "",
+      "telegram_url": "https://t.me/isAuto99/65006",
+      "mileage_km": 72000,
+      "engine": "3.0 бензин",
+      "transmission": "",
+      "drive": "Полный",
+      "seller_type": "Владелец, по тексту поста",
+      "listing_note": "Конкретный публичный пост найден через превью и индексированные публикации IsAuto. Указана сниженная цена $13 500 вместо $15 999; есть последующий репост с предложением торга. Заявлены ТО каждые 5 тыс. км и два комплекта шин. Дата исходной публикации не извлечена, наличие требует подтверждения владельцем; отметки о продаже в доступном тексте нет. KIEVAVTO также проверен через оба адреса и индексированные посты, но дополнительного подходящего кандидата с достаточно подтверждёнными параметрами не добавлено. ([t.me](https://t.me/s/isAuto99/65006))",
+      "first_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_seen_at": "2026-10-04T19:02:15.391Z",
+      "last_price_usd": 13500,
+      "lowest_price_usd": 13500,
+      "price_history": [
+        {
+          "at": "2026-10-04T19:02:15.391Z",
+          "price_usd": 13500
+        }
+      ]
+    }
+  },
+  "last_discovered_count": 15,
+  "last_deep_analyzed_count": 8
 }
