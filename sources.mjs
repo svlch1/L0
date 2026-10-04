@@ -46,8 +46,24 @@ const EXPLORATION_BRANDS = [
 ];
 
 const AUTO_RIA_PAGES_PER_MODEL = 2;
+const AUTO_RIA_DAILY_SWEEP_PAGES = 6;
 const TELEGRAM_MAX_PAGES = 20;
 const HTTP_CONCURRENCY = 8;
+
+function kyivDayKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const x = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${x.year}-${x.month}-${x.day}`;
+}
+
+function dailySweepDue(state) {
+  return String(state?.last_daily_sweep_day || "") !== kyivDayKey();
+}
 
 const TELEGRAM_FEEDS = [
   { channel: "kievavto2", url: "https://t.me/s/kievavto2" },
@@ -218,21 +234,32 @@ function explorationUrls(state) {
 }
 
 function autoRiaPageUrls(state) {
+  const dailySweep = dailySweepDue(state);
+  const pageDepth = dailySweep ? AUTO_RIA_DAILY_SWEEP_PAGES : AUTO_RIA_PAGES_PER_MODEL;
+
   const core = AUTO_RIA_SEARCHES.flatMap((base) => {
     const urls = [{ url: base, exploration: false }];
-    for (let page = 2; page <= AUTO_RIA_PAGES_PER_MODEL; page++) {
+    for (let page = 2; page <= pageDepth; page++) {
       urls.push({ url: base + "?page=" + page, exploration: false });
     }
     return urls;
   });
 
-  const exploration = explorationUrls(state).map((x) => ({
-    url: x.url,
-    exploration: true,
-    exploration_brand: x.brand,
-  }));
+  const exploration = explorationUrls(state).flatMap((x) => {
+    const urls = [{ url: x.url, exploration: true, exploration_brand: x.brand }];
+    if (dailySweep) {
+      urls.push({ url: x.url + "?page=2", exploration: true, exploration_brand: x.brand });
+    }
+    return urls;
+  });
 
-  return { core, exploration, all: [...core, ...exploration] };
+  return {
+    core,
+    exploration,
+    all: [...core, ...exploration],
+    daily_sweep: dailySweep,
+    page_depth: pageDepth,
+  };
 }
 
 function telegramPostIds(html, channel) {
@@ -241,39 +268,111 @@ function telegramPostIds(html, channel) {
     .filter(Number.isFinite);
 }
 
-async function fetchTelegramPages(channel, url, errors, lastSeenId = 0) {
+async function fetchTelegramPages(channel, url, errors, cursor = {}) {
   const pages = [];
-  let nextUrl = url;
-  let highestSeen = 0;
-  const seenPageStarts = new Set();
+  const seenSignatures = new Set();
+  const oldHighWater = Number(cursor.high_water || 0);
+  const pendingHighWater = Number(cursor.pending_high_water || 0);
+  const backfillBefore = Number(cursor.backfill_before || 0);
+  let newestSeen = pendingHighWater;
+  let reachedOldHighWater = oldHighWater === 0;
+  let nextBackfillBefore = backfillBefore;
+  let pageBudget = TELEGRAM_MAX_PAGES;
 
-  for (let page = 0; page < TELEGRAM_MAX_PAGES; page++) {
-    try {
-      const html = await fetchHtml(nextUrl);
-      const ids = telegramPostIds(html, channel);
-      if (!ids.length) break;
-
-      const lowest = Math.min(...ids);
-      const highest = Math.max(...ids);
-      highestSeen = Math.max(highestSeen, highest);
-
-      const signature = highest + ":" + lowest;
-      if (seenPageStarts.has(signature)) break;
-      seenPageStarts.add(signature);
-      pages.push(html);
-
-      // Once the page overlaps the high-water mark from the previous run,
-      // we have covered every post published since then.
-      if (lastSeenId > 0 && lowest <= lastSeenId) break;
-
-      nextUrl = url + "?before=" + lowest;
-    } catch (error) {
-      errors.push(`Telegram ${channel} page ${page + 1}: ${String(error?.message || error)}`);
-      break;
-    }
+  async function grab(pageUrl) {
+    if (pageBudget <= 0) return null;
+    pageBudget -= 1;
+    const html = await fetchHtml(pageUrl);
+    const ids = telegramPostIds(html, channel);
+    if (!ids.length) return null;
+    const lowest = Math.min(...ids);
+    const highest = Math.max(...ids);
+    const signature = highest + ":" + lowest;
+    if (seenSignatures.has(signature)) return null;
+    seenSignatures.add(signature);
+    pages.push(html);
+    newestSeen = Math.max(newestSeen, highest);
+    return { html, lowest, highest };
   }
 
-  return { pages, highest_seen: highestSeen };
+  try {
+    // Always cover everything newer than the previous pending frontier first.
+    let latest = await grab(url);
+    if (!latest) {
+      return {
+        pages,
+        cursor: {
+          high_water: oldHighWater,
+          pending_high_water: pendingHighWater,
+          backfill_before: backfillBefore,
+        },
+      };
+    }
+
+    const bridgeTarget = pendingHighWater || oldHighWater;
+    let latestCursor = latest.lowest;
+
+    while (pageBudget > 0 && bridgeTarget > 0 && latestCursor > bridgeTarget) {
+      const page = await grab(url + "?before=" + latestCursor);
+      if (!page) break;
+      latestCursor = page.lowest;
+    }
+
+    // No pending gap: continue directly toward the last fully synced high-water mark.
+    if (!backfillBefore) {
+      let cursorBefore = latestCursor;
+      if (oldHighWater === 0 || cursorBefore <= oldHighWater) reachedOldHighWater = true;
+
+      while (pageBudget > 0 && !reachedOldHighWater) {
+        const page = await grab(url + "?before=" + cursorBefore);
+        if (!page) break;
+        cursorBefore = page.lowest;
+        if (cursorBefore <= oldHighWater) reachedOldHighWater = true;
+      }
+
+      if (!reachedOldHighWater && oldHighWater > 0) {
+        nextBackfillBefore = cursorBefore;
+      }
+    } else {
+      // A previous run exhausted its page budget. Continue exactly where it stopped.
+      let cursorBefore = backfillBefore;
+
+      while (pageBudget > 0 && !reachedOldHighWater) {
+        const page = await grab(url + "?before=" + cursorBefore);
+        if (!page) break;
+        cursorBefore = page.lowest;
+        if (oldHighWater === 0 || cursorBefore <= oldHighWater) reachedOldHighWater = true;
+      }
+
+      nextBackfillBefore = reachedOldHighWater ? 0 : cursorBefore;
+    }
+
+    const fullySynced = reachedOldHighWater || oldHighWater === 0;
+    return {
+      pages,
+      cursor: fullySynced
+        ? {
+            high_water: newestSeen,
+            pending_high_water: 0,
+            backfill_before: 0,
+          }
+        : {
+            high_water: oldHighWater,
+            pending_high_water: newestSeen,
+            backfill_before: nextBackfillBefore,
+          },
+    };
+  } catch (error) {
+    errors.push(`Telegram ${channel}: ${String(error?.message || error)}`);
+    return {
+      pages,
+      cursor: {
+        high_water: oldHighWater,
+        pending_high_water: Math.max(pendingHighWater, newestSeen),
+        backfill_before: nextBackfillBefore || backfillBefore,
+      },
+    };
+  }
 }
 
 function autoRiaCards(html, searchUrl, exploration = false) {
@@ -395,22 +494,30 @@ export async function collectDirectSources(state = {}) {
     }
   });
 
-  const allAuto = annotatePriceAnomalies(autoResults.flat());
+  const allAutoRaw = autoResults.flat();
+  const allAuto = annotatePriceAnomalies(allAutoRaw);
   const autoByUrl = new Map();
   for (const item of allAuto) {
     const key = normalizeUrl(item.source_url);
     const previous = autoByUrl.get(key);
-    // Prefer a core-model card over the same car found via a broad exploration page.
     if (!previous || (previous.exploration && !item.exploration)) autoByUrl.set(key, item);
   }
 
-  const highWater = state?.telegram_high_water || {};
+  const oldCursors = state?.telegram_cursors || {};
+  const legacyHighWater = state?.telegram_high_water || {};
   const tgResults = await Promise.all(
     TELEGRAM_FEEDS.map(async ({ channel, url }) => {
-      const fetched = await fetchTelegramPages(channel, url, errors, Number(highWater[channel] || 0));
+      const cursor = oldCursors[channel] || {
+        high_water: Number(legacyHighWater[channel] || 0),
+        pending_high_water: 0,
+        backfill_before: 0,
+      };
+      const fetched = await fetchTelegramPages(channel, url, errors, cursor);
       const byUrl = new Map();
+      let rawPosts = 0;
 
       for (const html of fetched.pages) {
+        rawPosts += telegramPostIds(html, channel).length;
         for (const item of telegramPosts(html, channel)) {
           const key = normalizeUrl(item.source_url);
           if (!byUrl.has(key)) byUrl.set(key, item);
@@ -421,7 +528,8 @@ export async function collectDirectSources(state = {}) {
         channel,
         items: [...byUrl.values()],
         pages_scanned: fetched.pages.length,
-        highest_seen: fetched.highest_seen,
+        raw_posts_seen: rawPosts,
+        cursor: fetched.cursor,
       };
     })
   );
@@ -454,14 +562,31 @@ export async function collectDirectSources(state = {}) {
 
   const autoPoolCount = pool.filter((x) => x.source === "AUTO.RIA").length;
   const telegramPoolCount = pool.length - autoPoolCount;
+  const telegramRawPosts = tgResults.reduce((sum, g) => sum + Number(g.raw_posts_seen || 0), 0);
+  const sourceHealthWarnings = [];
+
+  // Health checks use raw parsed content, not only "new" candidates, so a quiet market is not mistaken for a parser failure.
+  if (autoPagesScanned < 20 || autoByUrl.size < 20) {
+    sourceHealthWarnings.push(
+      `AUTO.RIA выглядит подозрительно: успешно прочитано страниц ${autoPagesScanned}, распознано объявлений ${autoByUrl.size}.`
+    );
+  }
+  if (tgResults.some((g) => g.pages_scanned === 0 || g.raw_posts_seen === 0)) {
+    const bad = tgResults
+      .filter((g) => g.pages_scanned === 0 || g.raw_posts_seen === 0)
+      .map((g) => g.channel)
+      .join(", ");
+    sourceHealthWarnings.push(`Telegram выглядит подозрительно для каналов: ${bad}.`);
+  }
 
   return {
     pool,
     price_changed_items: priceChangedItems,
-    telegram_high_water: Object.fromEntries(
-      tgResults.map((g) => [g.channel, Math.max(Number(highWater[g.channel] || 0), Number(g.highest_seen || 0))])
-    ),
+    telegram_cursors: Object.fromEntries(tgResults.map((g) => [g.channel, g.cursor])),
     exploration_brands: explorationUrls(state).map((x) => x.brand),
+    daily_sweep_performed: Boolean(pages.daily_sweep),
+    daily_sweep_day: pages.daily_sweep ? kyivDayKey() : String(state.last_daily_sweep_day || ""),
+    source_health_warnings: sourceHealthWarnings,
     stats: {
       auto_ria_candidates: autoPoolCount,
       telegram_candidates: telegramPoolCount,
@@ -470,8 +595,14 @@ export async function collectDirectSources(state = {}) {
       auto_ria_models: AUTO_RIA_SEARCHES.length,
       exploration_brands: explorationUrls(state).map((x) => x.brand),
       auto_ria_pages_scanned: autoPagesScanned,
+      auto_ria_raw_cards: autoByUrl.size,
+      auto_ria_page_depth: pages.page_depth,
+      daily_sweep_performed: Boolean(pages.daily_sweep),
       telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
+      telegram_raw_posts_seen: telegramRawPosts,
+      telegram_backfill_pending: tgResults.some((g) => Number(g.cursor?.backfill_before || 0) > 0),
       source_errors: errors.length,
+      source_health_warnings: sourceHealthWarnings.length,
     },
     errors,
   };
