@@ -301,7 +301,7 @@ function statusText(state) {
     `🔁 Всего завершённых проходов: ${state.completed_runs || 0}`,
     `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
-    "Источники: AUTO.RIA + KIEVAVTO + IsAuto",
+    "Источники: AUTO.RIA + 8 Telegram-каналов",
     "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
   ].join("\n");
 }
@@ -609,7 +609,7 @@ async function runDailyAnalyst(state, chatId) {
       gem: ">=8.5 and confidence>=70",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
-      sources: "AUTO.RIA + KIEVAVTO + IsAuto",
+      sources: "AUTO.RIA + 8 Telegram-каналов",
       schedule: "every 4 hours"
     }
   };
@@ -722,7 +722,7 @@ function sourcePriority(item, nowMs = Date.now()) {
 
   const ageScore = Math.min(180, ageHours * 5);
   const anomalyScore = Math.min(70, Math.max(0, anomaly) * 5);
-  const telegramBonus = item.source === "KIEVAVTO" || item.source === "IsAuto" ? 30 : 0;
+  const telegramBonus = item.source && item.source !== "AUTO.RIA" ? 30 : 0;
   const explorationBonus = item.exploration ? 10 : 0;
   const mileageScore =
     mileage > 0 && mileage <= 50000 ? 70 :
@@ -778,7 +778,7 @@ function selectSourceBatch(state, priceChangedItems = [], limit = 32) {
     7
   );
   add(
-    queued.filter(x => x.source === "KIEVAVTO" || x.source === "IsAuto" || x.exploration)
+    queued.filter(x => (x.source && x.source !== "AUTO.RIA") || x.exploration)
       .sort((a,b) => sourcePriority(b) - sourcePriority(a)),
     5
   );
@@ -841,7 +841,7 @@ function scheduleSecondChance(state, batch, discoveryCandidates, nowIso) {
     const price = Number(item.price_hint_usd || 0);
     const mileage = Number(item.mileage_hint_km || 0);
     const anomaly = Number(item.price_anomaly_pct || 0);
-    const telegram = item.source === "KIEVAVTO" || item.source === "IsAuto";
+    const telegram = item.source && item.source !== "AUTO.RIA";
     const interesting =
       anomaly >= 8 ||
       telegram ||
@@ -1515,7 +1515,7 @@ ${JSON.stringify(watchlist)}
 Ты — DISCOVERY-этап Car Gem Scout для покупки первой машины в Украине.
 
 Прямые collectors в этом проходе не дали данных, поэтому сделай резервный web-search.
-Проверь AUTO.RIA, KIEVAVTO (https://t.me/kievavto2) и IsAuto (https://t.me/isAuto99).
+Проверь AUTO.RIA и публичные Telegram-источники: KIEVAVTO, IsAuto, Imperiya Auto, Grand The Auto, Автобазар Дніпро, Karavan Дніпро, Hapai Auto и Griznes Auto.
 
 КРИТЕРИИ:
 - бюджет до $25,000; до ~$26,500 только для очень сильного варианта;
@@ -1725,7 +1725,7 @@ if (TEST_ONLY) {
   await sendText(chatId,
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
-    "Проверяю AUTO.RIA + KIEVAVTO + IsAuto и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
+    "Проверяю AUTO.RIA + 8 Telegram-каналов и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
     "Команды: /status — статус; /almost — 7.8–8.4; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней."
   );
   process.exit(0);
