@@ -707,12 +707,11 @@ async function deepAnalyzeCandidates(candidates, state) {
 
   const analyses = [];
 
-  // One car per response prevents structured output truncation.
-  // Run two in parallel to keep the full scout within the GitHub Actions window.
-  for (let i = 0; i < candidates.length; i += 2) {
-    const pair = candidates.slice(i, i + 2);
-    const results = await Promise.all(pair.map((candidate) => deepAnalyzeOne(candidate)));
-    analyses.push(...results.filter(Boolean));
+  // One car per response and sequential execution keep us under API TPM limits.
+  for (const candidate of candidates) {
+    const result = await deepAnalyzeOne(candidate);
+    if (result) analyses.push(result);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 
   return { analyses };
@@ -768,7 +767,7 @@ try {
         Number(b.discovery_score || 0);
       return bp - ap;
     })
-    .slice(0, 4);
+    .slice(0, 3);
 
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
