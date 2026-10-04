@@ -1169,18 +1169,20 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
   const tg = direct?.stats?.telegram_channels || {};
   const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
   const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
+  const deepQueue = Number(state.last_deep_queue_count || 0);
 
   return [
     "📡 Car Gem Scout — проверка завершена",
     "",
-    `📲 Telegram: KIEVAVTO ${kievPosts} постов · IsAuto ${isAutoPosts} постов`,
-    `🔎 Кандидатов после отбора: ${discoveredCount}`,
-    `🔬 Глубоко проверено Luna: ${selectedCount}`,
-    `🧠 Финально перепроверено: ${solAudits}`,
-    `👀 Машин под наблюдением: ${watchCount}`,
+    `🎯 Потенциальных кандидатов после первого отбора: ${discoveredCount}`,
+    `🔬 Luna глубоко проверила: ${selectedCount}`,
+    `⏳ Ещё ждут глубокой проверки Luna: ${deepQueue}`,
+    solAudits ? `🧠 Самые сильные дополнительно перепроверены Sol: ${solAudits}` : null,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
     `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
+    `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
+    `📲 Telegram просмотрено: KIEVAVTO ${kievPosts} постов · IsAuto ${isAutoPosts} постов`,
     `💸 Этот проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     `📅 Сегодня: ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     "",
@@ -1189,7 +1191,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
       : "ГЕМов нет — продолжаю следить за рынком.",
     "",
     "⌨️ /status · /almost · /top",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function candidateUrls(a) {
