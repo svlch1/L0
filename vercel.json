@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {"path": "/api/scout", "schedule": "0 5 * * *"},
-    {"path": "/api/scout", "schedule": "0 6 * * *"},
-    {"path": "/api/scout", "schedule": "0 16 * * *"},
-    {"path": "/api/scout", "schedule": "0 17 * * *"}
-  ]
-}
+{}
