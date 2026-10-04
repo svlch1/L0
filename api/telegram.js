@@ -202,6 +202,7 @@ function statusText(state) {
   const almostCount = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
+  const interestingCount = Object.keys(state.interesting_by_key || {}).length;
   const tg = state.last_collector_stats?.telegram_channels || {};
   const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
   const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
@@ -223,6 +224,7 @@ function statusText(state) {
     `⏳ Ждут глубокой проверки Luna: ${deepQueue}`,
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
+    `🧩 Интересных вариантов со штрафом: ${interestingCount}`,
     `🔥 Всего отправлено ГЕМов: ${state.total_gems_sent || 0}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
