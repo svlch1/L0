@@ -178,42 +178,78 @@ function outputText(data) {
     .trim();
 }
 
-async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTokens = 5000 }) {
+async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTokens = 5000, background = false }) {
+  const payload = {
+    model: "gpt-6.1-sol",
+    reasoning: { effort },
+    tools: [{
+      type: "web_search",
+      search_context_size: "high",
+      user_location: {
+        type: "approximate",
+        country: "UA",
+        timezone: "Europe/Kyiv"
+      }
+    }],
+    input: prompt,
+    text: {
+      format: {
+        type: "json_schema",
+        name,
+        strict: true,
+        schema,
+      }
+    },
+    max_output_tokens: maxOutputTokens,
+    store: false,
+  };
+
+  if (background) payload.background = true;
+
   const r = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${OPENAI_API_KEY}`,
     },
-    body: JSON.stringify({
-      model: "gpt-6.1-sol",
-      reasoning: { effort },
-      tools: [{
-        type: "web_search",
-        search_context_size: "high",
-        user_location: {
-          type: "approximate",
-          country: "UA",
-          timezone: "Europe/Kyiv"
-        }
-      }],
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name,
-          strict: true,
-          schema,
-        }
-      },
-      max_output_tokens: maxOutputTokens,
-      store: false,
-    }),
+    body: JSON.stringify(payload),
   });
 
   const raw = await r.text();
   if (!r.ok) throw new Error(`OpenAI API failed ${r.status}: ${raw.slice(0, 1200)}`);
-  const data = JSON.parse(raw);
+  let data = JSON.parse(raw);
+
+  if (background) {
+    if (!data.id) throw new Error("Background response did not return an id");
+
+    const deadline = Date.now() + 25 * 60 * 1000;
+    while ((data.status === "queued" || data.status === "in_progress") && Date.now() < deadline) {
+      console.log(`OpenAI background response ${data.id}: ${data.status}`);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      const poll = await fetch("https://api.openai.com/v1/responses/" + encodeURIComponent(data.id), {
+        headers: {
+          authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+      });
+      const pollRaw = await poll.text();
+      if (!poll.ok) {
+        throw new Error(`OpenAI background poll failed ${poll.status}: ${pollRaw.slice(0, 1200)}`);
+      }
+      data = JSON.parse(pollRaw);
+    }
+
+    if (data.status === "queued" || data.status === "in_progress") {
+      throw new Error("OpenAI background response timed out after 25 minutes");
+    }
+    if (data.status !== "completed") {
+      throw new Error(
+        "OpenAI background response ended with status=" + String(data.status || "unknown") +
+        "; error=" + JSON.stringify(data.error || data.incomplete_details || null)
+      );
+    }
+  }
+
   const text = outputText(data);
   if (!text) throw new Error("OpenAI returned empty structured output");
   try {
@@ -658,6 +694,7 @@ candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входн
       name: "car_deep_analysis",
       effort: "high",
       maxOutputTokens: 9000,
+      background: true,
     });
 
     analyses.push(...(result.analyses || []));
