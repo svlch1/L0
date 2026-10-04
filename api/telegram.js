@@ -157,24 +157,30 @@ function statusText(state) {
   const almostCount = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
+  const tg = state.last_collector_stats?.telegram_channels || {};
+  const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
+  const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
+  const deepQueue = Number(state.last_deep_queue_count || 0);
 
   return [
     healthy ? "🟢 Car Gem Scout работает" : "🔴 Car Gem Scout: есть ошибка",
     "",
     `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
-    `🔎 Результат: ${result}`,
-    `🔬 Глубоко проверено Luna: ${state.last_deep_analyzed_count || 0}`,
-    `👀 Машин под наблюдением: ${watchCount}`,
+    `🔎 Итог: ${result}`,
+    "",
+    `🎯 Потенциальных кандидатов после первого отбора: ${state.last_discovered_count || 0}`,
+    `🔬 Luna уже глубоко проверила: ${state.last_deep_analyzed_count || 0}`,
+    `⏳ Ждут глубокой проверки Luna: ${deepQueue}`,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
     `🔥 Всего отправлено ГЕМов: ${state.total_gems_sent || 0}`,
+    `👀 Машин под наблюдением за ценой: ${watchCount}`,
+    "",
+    `📲 Telegram просмотрено: KIEVAVTO ${kievPosts} постов · IsAuto ${isAutoPosts} постов`,
     usage ? `💸 Последний проход: ~${usd(usage.estimated_cost_usd)}` : "💸 Стоимость появится после следующего прохода",
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
     `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
-    "⌨️ Команды",
-    "/status — статус бота",
-    "/almost — машины 7.8–8.4",
-    "/top — лучшие ГЕМЫ за 30 дней",
+    "⌨️ /status · /almost · /top",
   ].filter(Boolean).join("\n");
 }
 
