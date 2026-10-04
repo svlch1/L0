@@ -96,6 +96,51 @@ function almostText(state) {
   ].join("\n\n").slice(0, 3900);
 }
 
+function interestingText(state) {
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+  const items = Object.values(state.interesting_by_key || {})
+    .filter((x) => {
+      const at = Date.parse(x.updated_at || x.found_at || "");
+      return at && at >= cutoff && Number(x.potential_score || 0) >= 8.0;
+    })
+    .sort((a,b) => {
+      const d = Number(b.potential_score || 0) - Number(a.potential_score || 0);
+      if (d) return d;
+      return Number(b.penalty_points || 0) - Number(a.penalty_points || 0);
+    })
+    .slice(0, 8);
+
+  if (!items.length) {
+    return [
+      "🧩 Интересные варианты",
+      "",
+      "Сейчас нет машин, которые выглядели бы как потенциальные 8+/10, но получили заметный штраф за конкретный риск.",
+      "Команда заполняется только после глубокой проверки Luna."
+    ].join("\n");
+  }
+
+  const blocks = items.map((x,i) => {
+    const reasons = Array.isArray(x.reasons) && x.reasons.length
+      ? x.reasons.map((r) => "⚠️ " + String(r).replace(/\s+/g," ")).join("\n")
+      : "⚠️ Причина штрафа сохранена не полностью";
+    return [
+      `${i+1}. 🧩 ${x.model || "Авто"} ${x.year || ""} ${x.trim || ""}`.trim(),
+      `⭐ Итог: ${Number(x.score || 0).toFixed(2)}/10 · потенциал: ${Number(x.potential_score || 0).toFixed(2)}/10`,
+      `📉 Штраф: -${Number(x.penalty_points || 0).toFixed(2)} балла · ${money(x.price_usd)}`,
+      reasons,
+      x.verdict ? `💬 ${String(x.verdict).slice(0,180)}` : null,
+      x.url ? `🔗 ${x.url}` : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  return [
+    "🧩 Интересные варианты",
+    "Это машины с хорошим потенциалом, которым итоговый рейтинг заметно снизил конкретный риск. Автоматически их не присылаю.",
+    "",
+    ...blocks
+  ].join("\n\n").slice(0,4000);
+}
+
 function topText(state) {
   const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
   const items = Object.values(state.top_gems_by_key || {})
@@ -186,7 +231,7 @@ function statusText(state) {
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
     `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
-    "⌨️ /status · /almost · /top",
+    "⌨️ /status · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
 }
 
@@ -201,16 +246,18 @@ export default async function handler(req, res) {
   }
 
   const text = String(message.text || "").trim().toLowerCase();
-  if (!/^\/(start|status|almost|top)(@\w+)?\b/.test(text)) {
+  if (!/^\/(start|status|almost|interesting|top)(@\w+)?\b/.test(text)) {
     return res.status(200).json({ ok: true });
   }
 
   const state = await loadState();
   const reply = /^\/almost(@\w+)?\b/.test(text)
     ? almostText(state)
-    : /^\/top(@\w+)?\b/.test(text)
-      ? topText(state)
-      : statusText(state);
+    : /^\/interesting(@\w+)?\b/.test(text)
+      ? interestingText(state)
+      : /^\/top(@\w+)?\b/.test(text)
+        ? topText(state)
+        : statusText(state);
 
   return res.status(200).json({
     method: "sendMessage",
