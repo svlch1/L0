@@ -788,17 +788,27 @@ function ensureDeepQueue(state) {
   return state.deep_queue;
 }
 
+function deepEligible(item) {
+  const score = Number(item.discovery_score || 0);
+  const anomaly = Number(item.price_anomaly_pct || 0);
+  const mileage = Number(item.mileage_km || 0);
+  const previous = Number(item.previous_score || 0);
+
+  if (item.needs_sol_audit) return true;
+  if (item.target_price_trigger && previous >= 7.0) return true;
+  if (item.price_drop_trigger && previous >= 7.0) return true;
+  if (!item.never_analyzed) return false;
+
+  if (score >= 7.7) return true;
+  if (score >= 7.4 && anomaly >= 12 && (!mileage || mileage <= 90000)) return true;
+  return false;
+}
+
 function enqueueDeepCandidates(state, candidates, nowIso) {
   const queue = ensureDeepQueue(state);
 
   for (const candidate of candidates || []) {
-    if (!candidate?.candidate_key) continue;
-    const needsDeep =
-      candidate.needs_sol_audit ||
-      candidate.never_analyzed ||
-      candidate.price_drop_trigger ||
-      candidate.target_price_trigger;
-    if (!needsDeep) continue;
+    if (!candidate?.candidate_key || !deepEligible(candidate)) continue;
 
     const previous = queue[candidate.candidate_key] || {};
     queue[candidate.candidate_key] = {
@@ -810,6 +820,10 @@ function enqueueDeepCandidates(state, candidates, nowIso) {
       deep_attempts: Number(previous.deep_attempts || 0),
       deep_not_before: previous.deep_not_before || "",
     };
+  }
+
+  for (const [key, item] of Object.entries(queue)) {
+    if (!deepEligible(item) && !item.needs_sol_audit) delete queue[key];
   }
 
   const entries = Object.entries(queue)
@@ -829,33 +843,31 @@ function deepPriority(item) {
   const wait = deepWaitHours(item);
   return (
     (item.needs_sol_audit ? 2000 : 0) +
-    (item.target_price_trigger ? 1500 : 0) +
-    (item.price_drop_trigger ? 1000 : 0) +
-    Math.min(600, wait * 20) +
-    Math.max(0, Number(item.price_anomaly_pct || 0)) * 18 +
-    Number(item.discovery_score || 0) * 20
+    (item.target_price_trigger ? 900 : 0) +
+    (item.price_drop_trigger ? 700 : 0) +
+    Number(item.previous_score || 0) * 80 +
+    Number(item.discovery_score || 0) * 100 +
+    Math.min(250, wait * 10) +
+    Math.min(45, Math.max(0, Number(item.price_anomaly_pct || 0)) * 3)
   );
 }
 
 function adaptiveDeepLimit(state, available) {
   if (!available.length) return 0;
 
-  // Soft cost guard: quality stays adaptive, but a surprisingly expensive day falls back toward 2.
   const spentToday = Number(state.api_usage_today?.estimated_cost_usd || 0);
-  const maxByCost = spentToday >= 1.0 ? 2 : spentToday >= 0.6 ? 3 : 4;
+  const maxByCost = spentToday >= 0.6 ? 2 : spentToday >= 0.35 ? 3 : 4;
 
-  const urgent = available.filter((x) =>
+  const veryStrong = available.filter((x) =>
     x.needs_sol_audit ||
     x.target_price_trigger ||
-    x.price_drop_trigger ||
-    Number(x.discovery_score || 0) >= 8.8 ||
-    Number(x.price_anomaly_pct || 0) >= 12 ||
-    deepWaitHours(x) >= 24
+    Number(x.previous_score || 0) >= 8.0 ||
+    Number(x.discovery_score || 0) >= 8.3
   ).length;
 
-  let limit = 2;
-  if (urgent >= 1 || available.length >= 8 || available.some((x) => deepWaitHours(x) >= 12)) limit = 3;
-  if (urgent >= 2 && (available.length >= 6 || available.some((x) => deepWaitHours(x) >= 24))) limit = 4;
+  let limit = Math.min(2, available.length);
+  if (veryStrong >= 3) limit = 3;
+  if (veryStrong >= 4 && available.some((x) => Number(x.discovery_score || 0) >= 8.7 || x.needs_sol_audit)) limit = 4;
 
   return Math.min(limit, maxByCost, available.length);
 }
@@ -863,6 +875,11 @@ function adaptiveDeepLimit(state, available) {
 function selectDeepBatch(state) {
   const queue = ensureDeepQueue(state);
   const now = Date.now();
+
+  for (const [key, item] of Object.entries(queue)) {
+    if (!deepEligible(item) && !item.needs_sol_audit) delete queue[key];
+  }
+
   const available = Object.values(queue)
     .filter((x) => !x.deep_not_before || Date.parse(x.deep_not_before) <= now)
     .sort((a, b) => deepPriority(b) - deepPriority(a));
