@@ -101,8 +101,12 @@ function kyivDay(iso = new Date().toISOString()) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-function persistApiUsage(state) {
-  state.last_api_usage = JSON.parse(JSON.stringify(runUsage));
+function persistApiUsage(state, { markLastResearch = true } = {}) {
+  if (markLastResearch) {
+    state.last_api_usage = JSON.parse(JSON.stringify(runUsage));
+  } else {
+    state.last_analyst_api_usage = JSON.parse(JSON.stringify(runUsage));
+  }
 
   const day = kyivDay();
   if (!state.api_usage_today || state.api_usage_today.date !== day) {
@@ -640,7 +644,7 @@ ${JSON.stringify(payload)}
 
   state.last_daily_analyst_at = new Date().toISOString();
   state.last_daily_analyst = result;
-  persistApiUsage(state);
+  persistApiUsage(state, { markLastResearch: false });
   saveState(state);
   await sendText(chatId, analystMessage(result));
 }
