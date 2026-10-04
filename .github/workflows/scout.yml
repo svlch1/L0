@@ -1,6 +1,11 @@
 name: Car Gem Scout
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/scout.yml"
   schedule:
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
@@ -33,11 +38,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TEST_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_only || 'false' }}
+          TEST_ONLY: ${{ github.event_name == 'push' && 'true' || (github.event_name == 'workflow_dispatch' && inputs.test_only || 'false') }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: node scout.mjs
       - name: Save alerted VINs and URLs
-        if: github.event_name != 'workflow_dispatch' || inputs.test_only != 'true'
+        if: github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.test_only != 'true')
         run: |
           if git diff --quiet -- seen.json; then
             exit 0
