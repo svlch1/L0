@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { collectDirectSources, commitObservedUrls } from "./sources.mjs";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -178,19 +179,10 @@ function outputText(data) {
     .trim();
 }
 
-async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTokens = 5000, background = false }) {
+async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTokens = 5000, background = false, useWebSearch = true }) {
   const payload = {
     model: "gpt-6.1-sol",
     reasoning: { effort },
-    tools: [{
-      type: "web_search",
-      search_context_size: "high",
-      user_location: {
-        type: "approximate",
-        country: "UA",
-        timezone: "Europe/Kyiv"
-      }
-    }],
     input: prompt,
     text: {
       format: {
@@ -203,6 +195,18 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
     max_output_tokens: maxOutputTokens,
     store: false,
   };
+
+  if (useWebSearch) {
+    payload.tools = [{
+      type: "web_search",
+      search_context_size: "high",
+      user_location: {
+        type: "approximate",
+        country: "UA",
+        timezone: "Europe/Kyiv"
+      }
+    }];
+  }
 
   if (background) payload.background = true;
 
@@ -584,48 +588,90 @@ Real Buy-In Cost первые ~6 мес.: ${money(a.real_buy_in_low_usd)}–${mo
 ${a.verdict}`;
 }
 
-async function discoverCandidates(state) {
+async function discoverCandidates(state, directItems = []) {
   const watchlist = compactWatchlist(state);
+
+  if (directItems.length) {
+    const compactItems = directItems.slice(0, 32).map((x) => ({
+      source: x.source,
+      source_url: x.source_url,
+      auto_ria_url: x.auto_ria_url,
+      telegram_url: x.telegram_url,
+      vin_hint: x.vin_hint || "",
+      price_hint_usd: Number(x.price_hint_usd || 0),
+      mileage_hint_km: Number(x.mileage_hint_km || 0),
+      published_at_hint: x.published_at_hint || "",
+      raw_text: String(x.raw_text || "").slice(0, 1100),
+    }));
+
+    const prompt = `
+Ты — дешёвый FILTER/RANKING этап Car Gem Scout.
+РЫНОК УЖЕ СОБРАН ПРЯМЫМ КОДОМ с AUTO.RIA и публичных Telegram-лент. НЕ ИЩИ ничего в интернете и НЕ придумывай новые объявления.
+
+ТВОЯ ЗАДАЧА:
+Из сырых карточек ниже выбрать максимум 10 кандидатов для дорогого глубокого VIN-анализа.
+Используй ТОЛЬКО данные из RAW ITEMS. source_url/auto_ria_url/telegram_url копируй ТОЧНО.
+
+КРИТЕРИИ:
+- бюджет обычно <= $25,000; до ~$26,500 только если вариант реально сильный/есть очевидный торг;
+- пробег желательно <=70k км, до ~90k допустимо у сильной модели/цены;
+- эффектный спортивный/премиальный автомобиль;
+- динамика желательно около 6 сек 0–100 или быстрее;
+- главный ориентир Infiniti Q60;
+- подходят интересные BMW 3/4, Mercedes C/CLA/coupe, Lexus RC/IS, Audi A5/S5, Genesis G70 и аналогичные;
+- не тащи скучные массовые седаны;
+- Kia Stinger только при аномально выгодной сделке;
+- очевидные flood/fire/тяжёлый structural мусор не выбирай, если это прямо видно в тексте;
+- для каждого поставь discovery_score 0–10.
+
+Если какого-то поля нет — пустая строка или 0. НИЧЕГО не выдумывай.
+
+RAW ITEMS:
+${JSON.stringify(compactItems)}
+
+PRICE WATCH:
+${JSON.stringify(watchlist)}
+`;
+
+    return openaiJson({
+      prompt,
+      schema: discoverySchema,
+      name: "car_candidate_discovery",
+      effort: "low",
+      maxOutputTokens: 5000,
+      useWebSearch: false,
+    });
+  }
+
+  // Fallback only: use web search if direct collectors returned nothing.
   const prompt = `
 Ты — DISCOVERY-этап Car Gem Scout для покупки первой машины в Украине.
 
-ТВОЯ ЗАДАЧА СЕЙЧАС НЕ ДЕЛАТЬ ГЛУБОКИЙ АНАЛИЗ.
-Сначала максимально полно найди СВЕЖИЕ актуальные объявления-кандидаты, чтобы второй этап уже отдельно глубоко проверял VIN/аукционы/технику.
+Прямые collectors в этом проходе не дали данных, поэтому сделай резервный web-search.
+Проверь AUTO.RIA, KIEVAVTO (https://t.me/kievavto2) и IsAuto (https://t.me/isAuto99).
 
-ОБЯЗАТЕЛЬНО ПРОВЕРЬ:
-1) AUTO.RIA по Украине.
-2) KIEVAVTO: https://t.me/kievavto2 и https://t.me/s/kievavto2
-3) IsAuto: https://t.me/isAuto99 и доступные публичные/индексированные посты.
-
-ШИРОКИЙ ФИЛЬТР DISCOVERY:
-- ориентир бюджета до $25,000; допускай до ~$26,500 только если очевиден торг/аномально сильный вариант;
-- пробег желательно <=70k км, но до ~90k можно оставить кандидатом для сильной модели/цены;
-- эффектный спортивный/премиальный автомобиль, первая машина должна вызывать эмоции;
-- динамика желательно около 6 сек 0–100 или быстрее;
-- главный ориентир Infiniti Q60;
-- также BMW coupe/3/4-series хороших конфигураций, Mercedes coupe/CLA/C-Class, Lexus RC/IS, Audi и аналогичные интересные автомобили;
-- не тащи скучные массовые седаны типа Accord;
-- Kia Stinger только если реально аномальная сделка;
-- пока НЕ отбрасывай умеренно битых американцев, если они потенциально могут быть хорошей покупкой — это проверит второй этап;
-- flood/fire/очевидный тяжёлый структурный хлам можешь не включать сразу.
-
-Найди максимум 10 реальных актуальных кандидатов. Для каждого поставь discovery_score 0–10 — предварительную оценку соответствия моим критериям ДО глубокого VIN-анализа.
-В source_url давай ПРЯМУЮ ссылку на конкретное объявление/пост.
-Не выдумывай VIN, цену, пробег или URL. Если VIN не найден — пустая строка, если число неизвестно — 0.
+КРИТЕРИИ:
+- бюджет до $25,000; до ~$26,500 только для очень сильного варианта;
+- пробег желательно <=70k км, до ~90k допустимо;
+- эффектный спортивный/премиальный автомобиль;
+- ~6 сек 0–100 или быстрее желательно;
+- ориентир Infiniti Q60; также BMW 3/4, Mercedes C/CLA/coupe, Lexus RC/IS, Audi и аналоги;
+- не предлагай скучные массовые седаны;
+- максимум 10 кандидатов;
+- прямые URL обязательны;
+- не выдумывай VIN/цену/пробег/URL.
 
 PRICE WATCH:
-Ниже машины, которые мы уже видели. По возможности перепроверь, не изменилась ли у них цена и не перевыложены ли они:
 ${JSON.stringify(watchlist)}
-
-Цель — высокая полнота сбора. Лучше до 10 релевантных кандидатов для второго этапа, чем сразу выбрать одного и пропустить более выгодный.
 `;
 
   return openaiJson({
     prompt,
     schema: discoverySchema,
-    name: "car_candidate_discovery",
+    name: "car_candidate_discovery_fallback",
     effort: "low",
     maxOutputTokens: 5000,
+    useWebSearch: true,
   });
 }
 
@@ -750,7 +796,12 @@ if (TEST_ONLY) {
 if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 
 try {
-  const discovery = await discoverCandidates(state);
+  const direct = await collectDirectSources(state);
+  state.last_collector_stats = direct.stats;
+  state.last_collector_errors = (direct.errors || []).slice(0, 8);
+  state.last_collector_mode = direct.items.length ? "direct" : "web_fallback";
+  const discovery = await discoverCandidates(state, direct.items);
+  commitObservedUrls(state, direct.observed_urls);
   const nowIso = new Date().toISOString();
   const discovered = (discovery.candidates || [])
     .filter((x) => x && (x.source_url || x.auto_ria_url || x.telegram_url))
