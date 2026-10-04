@@ -222,7 +222,7 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
   if (background) {
     if (!data.id) throw new Error("Background response did not return an id");
 
-    const deadline = Date.now() + 25 * 60 * 1000;
+    const deadline = Date.now() + 15 * 60 * 1000;
     let pollCount = 0;
     let lastLoggedStatus = "";
     while ((data.status === "queued" || data.status === "in_progress") && Date.now() < deadline) {
@@ -246,7 +246,7 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
     }
 
     if (data.status === "queued" || data.status === "in_progress") {
-      throw new Error("OpenAI background response timed out after 25 minutes");
+      throw new Error("OpenAI background response timed out after 15 minutes");
     }
     if (data.status !== "completed") {
       throw new Error(
@@ -694,8 +694,8 @@ candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входн
     prompt,
     schema: analysisSchema,
     name: "car_deep_analysis",
-    effort: "high",
-    maxOutputTokens: 20000,
+    effort: "medium",
+    maxOutputTokens: 16000,
     background: true,
   });
 
@@ -708,13 +708,24 @@ async function deepAnalyzeCandidates(candidates, state) {
   const analyses = [];
 
   // One car per response and sequential execution keep us under API TPM limits.
+  let failed = 0;
   for (const candidate of candidates) {
-    const result = await deepAnalyzeOne(candidate);
-    if (result) analyses.push(result);
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const result = await deepAnalyzeOne(candidate);
+      if (result) analyses.push(result);
+      else failed += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("Deep analysis failed for " + candidate.candidate_key + ": " + String(error?.message || error));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
 
-  return { analyses };
+  if (candidates.length > 0 && analyses.length === 0) {
+    throw new Error("All selected deep analyses failed (" + failed + "/" + candidates.length + ")");
+  }
+
+  return { analyses, failed };
 }
 
 if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
@@ -773,6 +784,7 @@ try {
   saveState(state);
 
   const deep = await deepAnalyzeCandidates(selected, state);
+  state.last_deep_failed_count = Number(deep.failed || 0);
   const analysisByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
   const watch = ensureMarketWatch(state);
   const alerts = [];
