@@ -294,12 +294,13 @@ const discoverySchema = {
           location: { type: "string" },
           seller_type: { type: "string" },
           listing_note: { type: "string" },
-          why_candidate: { type: "string" }
+          why_candidate: { type: "string" },
+          discovery_score: { type: "number" }
         },
         required: [
           "source","source_url","auto_ria_url","telegram_url","vin","model","year",
           "price_usd","mileage_km","engine","transmission","drive","location",
-          "seller_type","listing_note","why_candidate"
+          "seller_type","listing_note","why_candidate","discovery_score"
         ],
         additionalProperties: false
       }
@@ -608,7 +609,8 @@ async function discoverCandidates(state) {
 - пока НЕ отбрасывай умеренно битых американцев, если они потенциально могут быть хорошей покупкой — это проверит второй этап;
 - flood/fire/очевидный тяжёлый структурный хлам можешь не включать сразу.
 
-Найди максимум 15 реальных актуальных кандидатов. В source_url давай ПРЯМУЮ ссылку на конкретное объявление/пост.
+Найди максимум 15 реальных актуальных кандидатов. Для каждого поставь discovery_score 0–10 — предварительную оценку соответствия моим критериям ДО глубокого VIN-анализа.
+В source_url давай ПРЯМУЮ ссылку на конкретное объявление/пост.
 Не выдумывай VIN, цену, пробег или URL. Если VIN не найден — пустая строка, если число неизвестно — 0.
 
 PRICE WATCH:
@@ -622,8 +624,8 @@ ${JSON.stringify(watchlist)}
     prompt,
     schema: discoverySchema,
     name: "car_candidate_discovery",
-    effort: "medium",
-    maxOutputTokens: 9000,
+    effort: "low",
+    maxOutputTokens: 16000,
   });
 }
 
@@ -693,7 +695,7 @@ candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входн
     schema: analysisSchema,
     name: "car_deep_analysis",
     effort: "high",
-    maxOutputTokens: 12000,
+    maxOutputTokens: 20000,
     background: true,
   });
 
@@ -754,8 +756,16 @@ try {
       return false;
     })
     .sort((a, b) => {
-      const ap = (a.target_price_trigger ? 100 : 0) + (a.price_drop_trigger ? 50 : 0) + (a.never_analyzed ? 10 : 0);
-      const bp = (b.target_price_trigger ? 100 : 0) + (b.price_drop_trigger ? 50 : 0) + (b.never_analyzed ? 10 : 0);
+      const ap =
+        (a.target_price_trigger ? 1000 : 0) +
+        (a.price_drop_trigger ? 500 : 0) +
+        (a.never_analyzed ? 100 : 0) +
+        Number(a.discovery_score || 0);
+      const bp =
+        (b.target_price_trigger ? 1000 : 0) +
+        (b.price_drop_trigger ? 500 : 0) +
+        (b.never_analyzed ? 100 : 0) +
+        Number(b.discovery_score || 0);
       return bp - ap;
     })
     .slice(0, 4);
