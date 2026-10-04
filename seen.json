@@ -5,5 +5,10 @@
     "iv": "Pc61hZTgJP1dND2F",
     "tag": "JduD2EcJIwg4/rHtr5csXw==",
     "data": "g0aYbnq4a11+"
-  }
+  },
+  "telegram_update_offset": 792178534,
+  "last_check_at": "2026-10-04T18:11:22.338Z",
+  "last_check_status": "test",
+  "last_error": null,
+  "completed_runs": 1
 }
