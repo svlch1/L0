@@ -25,6 +25,7 @@ jobs:
         env:
           TELEGRAM_FORCE_RECENT_POSTS: "100"
           FORCE_DAILY_SWEEP: "true"
+          DEBUG_TELEGRAM_PARSER: "true"
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs";
@@ -51,3 +52,5 @@ jobs:
           NODE
 
 # parser-fixed-rerun
+
+# mileage-and-telegram-debug-rerun
