@@ -1166,10 +1166,14 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
   const almostCount = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
+  const tg = direct?.stats?.telegram_channels || {};
+  const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
+  const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
 
   return [
     "📡 Car Gem Scout — проверка завершена",
     "",
+    `📲 Telegram: KIEVAVTO ${kievPosts} постов · IsAuto ${isAutoPosts} постов`,
     `🔎 Кандидатов после отбора: ${discoveredCount}`,
     `🔬 Глубоко проверено Luna: ${selectedCount}`,
     `🧠 Финально перепроверено: ${solAudits}`,
@@ -1422,7 +1426,7 @@ candidate_key скопируй ТОЧНО: ${candidate.candidate_key}
     maxOutputTokens: 6000,
     useWebSearch: true,
     searchContextSize: "medium",
-    maxToolCalls: vinCache ? 2 : 3,
+    maxToolCalls: vinCache ? 1 : 2,
   });
 
   return (result.analyses || [])[0] || null;
@@ -1466,7 +1470,7 @@ candidate_key должен остаться ровно: ${candidate.candidate_ke
     maxOutputTokens: 4200,
     useWebSearch: true,
     searchContextSize: "high",
-    maxToolCalls: vinCache ? 2 : 3,
+    maxToolCalls: 2,
   });
 
   return (result.analyses || [])[0] || null;
@@ -1602,8 +1606,8 @@ try {
 
     const shouldAuditWithSol =
       !luna.hard_reject &&
-      lunaScore >= 8.1 &&
-      lunaConfidence >= 60 &&
+      lunaScore >= 8.45 &&
+      lunaConfidence >= 65 &&
       lunaPrice > 0 &&
       lunaPrice <= 26000;
 
