@@ -110,8 +110,13 @@ function extractPriceUsd(text) {
 
 function extractMileageKm(text) {
   const s = String(text);
-  let m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис|тыс|k|к)\.?\s*(?:км|пробіг|пробег)?/i);
+
+  let m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис|тыс|k)\.?\s*км/i);
   if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000);
+
+  m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*[кk]\s*(?:пробіг|пробег|км)\b/i);
+  if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000);
+
   m = s.match(/(\d{1,3}(?:[ .]\d{3})?)\s*км/i);
   if (m) {
     const n = Number(m[1].replace(/ /g, ""));
@@ -489,13 +494,16 @@ function autoRiaCards(html, searchUrl, exploration = false) {
 function telegramPosts(html, channel) {
   const out = [];
   const wrappers = String(html).split(/<div class=["'][^"']*tgme_widget_message_wrap[^"']*["']/i).slice(1);
+  const debug = { wrappers: wrappers.length, ids: 0, texts: 0, brands: 0, prices: 0, mileage_rejects: 0, accepted: 0 };
 
   for (const wrapper of wrappers) {
     const idMatch = wrapper.match(new RegExp(`data-post=["']${channel}/(\\d+)["']`, "i"));
     if (!idMatch) continue;
+    debug.ids += 1;
 
     const textMatch = wrapper.match(/<div class=["'][^"']*tgme_widget_message_text[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
     if (!textMatch) continue;
+    debug.texts += 1;
 
     const text = decodeHtml(textMatch[1]).slice(0, 5000);
     const id = idMatch[1];
@@ -505,9 +513,15 @@ function telegramPosts(html, channel) {
     const vin = extractVin(text);
 
     if (!INTERESTING_BRANDS.test(text)) continue;
+    debug.brands += 1;
     if (!price || price > 27000) continue;
-    if (mileage && mileage > 110000) continue;
+    debug.prices += 1;
+    if (mileage && mileage > 110000) {
+      debug.mileage_rejects += 1;
+      continue;
+    }
 
+    debug.accepted += 1;
     out.push({
       source: channel.toLowerCase() === "kievavto2" ? "KIEVAVTO" : "IsAuto",
       source_url: url,
@@ -524,6 +538,10 @@ function telegramPosts(html, channel) {
       exploration: false,
       raw_text: text,
     });
+  }
+
+  if (process.env.DEBUG_TELEGRAM_PARSER === "true") {
+    console.log("TG_PARSER", channel, JSON.stringify(debug));
   }
 
   return out;
