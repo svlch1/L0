@@ -1319,6 +1319,21 @@ function pruneTopGems(state, nowIso) {
   }
 }
 
+function telegramCoverageText(stats) {
+  const channels = stats?.telegram_channels || {};
+  const parts = Object.values(channels)
+    .map((x) => ({
+      label: String(x.label || "").trim(),
+      posts: Number(x.raw_posts_seen || 0),
+    }))
+    .filter((x) => x.label);
+
+  if (!parts.length) return "Telegram: данных пока нет";
+  const total = parts.reduce((sum,x) => sum + x.posts, 0);
+  return `Telegram: ${parts.length} каналов / ${total} постов · ` +
+    parts.map((x) => `${x.label} ${x.posts}`).join(" · ");
+}
+
 function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAudits, gemCount }) {
   const usage = state.last_api_usage || runUsage;
   const today = state.api_usage_today || {};
@@ -1326,9 +1341,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
   const almostCount = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
-  const tg = direct?.stats?.telegram_channels || {};
-  const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
-  const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
+  const tgLine = telegramCoverageText(direct?.stats || {});
   const deepQueue = Number(state.last_deep_queue_count || 0);
 
   return [
@@ -1343,7 +1356,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
-    `📲 Telegram просмотрено: KIEVAVTO ${kievPosts} постов · IsAuto ${isAutoPosts} постов`,
+    `📲 ${tgLine}`,
     `💸 Этот проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     `📅 Сегодня: ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     "",
