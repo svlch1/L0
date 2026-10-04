@@ -7,8 +7,12 @@
     "data": "g0aYbnq4a11+"
   },
   "telegram_update_offset": 792178534,
-  "last_check_at": "2026-10-04T18:11:22.338Z",
-  "last_check_status": "test",
+  "last_check_at": "2026-10-04T18:05:50.667Z",
+  "last_check_status": "no_gem",
   "last_error": null,
-  "completed_runs": 1
+  "completed_runs": 1,
+  "last_found_count": 0,
+  "last_sent_count": 0,
+  "total_gems_sent": 0,
+  "last_test_at": "2026-10-04T18:11:22.338Z"
 }
