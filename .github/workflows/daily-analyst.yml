@@ -1,0 +1,42 @@
+name: Daily Car Scout Analyst
+
+on:
+  schedule:
+    - cron: "0 19,20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  analyst:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run analyst at 22:00 Kyiv
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$(TZ=Europe/Kyiv date +%H)" != "22" ]; then
+            echo "Not 22:00 in Kyiv; skipping this DST-safe cron slot."
+            exit 0
+          fi
+          ANALYST_ONLY=true node scout.mjs
+      - name: Save analyst state
+        if: always()
+        run: |
+          if git diff --quiet -- seen.json; then
+            exit 0
+          fi
+          git config user.name "Car Gem Scout Analyst"
+          git config user.email "car-gem-scout@users.noreply.github.com"
+          git add seen.json
+          git commit -m "Update daily Car Gem Scout analyst state"
+          git pull --rebase origin main
+          git push
