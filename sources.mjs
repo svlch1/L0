@@ -49,6 +49,8 @@ const EXPLORATION_BRANDS = [
 const AUTO_RIA_PAGES_PER_MODEL = 2;
 const AUTO_RIA_DAILY_SWEEP_PAGES = 6;
 const TELEGRAM_MAX_PAGES = 20;
+const TELEGRAM_FORCE_RECENT_POSTS = Math.max(0, Math.min(300, Number(process.env.TELEGRAM_FORCE_RECENT_POSTS || 0)));
+const FORCE_DAILY_SWEEP = process.env.FORCE_DAILY_SWEEP === "true";
 const HTTP_CONCURRENCY = 8;
 
 function kyivDayKey(date = new Date()) {
@@ -63,6 +65,7 @@ function kyivDayKey(date = new Date()) {
 }
 
 function dailySweepDue(state) {
+  if (FORCE_DAILY_SWEEP) return true;
   return String(state?.last_daily_sweep_day || "") !== kyivDayKey();
 }
 
@@ -286,6 +289,49 @@ function telegramPostIds(html, channel) {
 }
 
 async function fetchTelegramPages(channel, url, errors, cursor = {}) {
+  if (TELEGRAM_FORCE_RECENT_POSTS > 0) {
+    const pages = [];
+    const seenSignatures = new Set();
+    let nextUrl = url;
+    let rawCount = 0;
+    let newestSeen = Number(cursor.pending_high_water || cursor.high_water || 0);
+    const pageBudget = Math.max(TELEGRAM_MAX_PAGES, Math.ceil(TELEGRAM_FORCE_RECENT_POSTS / 8) + 6);
+
+    try {
+      for (let page = 0; page < pageBudget && rawCount < TELEGRAM_FORCE_RECENT_POSTS; page++) {
+        const html = await fetchHtml(nextUrl);
+        const ids = telegramPostIds(html, channel);
+        if (!ids.length) break;
+        const lowest = Math.min(...ids);
+        const highest = Math.max(...ids);
+        const signature = highest + ":" + lowest;
+        if (seenSignatures.has(signature)) break;
+        seenSignatures.add(signature);
+        pages.push(html);
+        rawCount += ids.length;
+        newestSeen = Math.max(newestSeen, highest);
+        nextUrl = url + "?before=" + lowest;
+      }
+
+      return {
+        pages,
+        cursor: {
+          high_water: Math.max(Number(cursor.high_water || 0), newestSeen),
+          pending_high_water: 0,
+          backfill_before: 0,
+        },
+        forced_recent_posts: TELEGRAM_FORCE_RECENT_POSTS,
+      };
+    } catch (error) {
+      errors.push(`Telegram ${channel} forced recent scan: ${String(error?.message || error)}`);
+      return {
+        pages,
+        cursor,
+        forced_recent_posts: TELEGRAM_FORCE_RECENT_POSTS,
+      };
+    }
+  }
+
   const pages = [];
   const seenSignatures = new Set();
   const oldHighWater = Number(cursor.high_water || 0);
@@ -574,8 +620,12 @@ export async function collectDirectSources(state = {}) {
 
   for (const [url, item] of allByUrl.entries()) {
     const watchedItem = watched.get(url);
-    if (!seen.has(url)) {
-      pool.push(item);
+    const forceTelegramReview =
+      TELEGRAM_FORCE_RECENT_POSTS > 0 &&
+      (item.source === "KIEVAVTO" || item.source === "IsAuto");
+
+    if (!seen.has(url) || forceTelegramReview) {
+      pool.push(forceTelegramReview ? { ...item, forced_recent_review: true } : item);
       continue;
     }
 
@@ -643,6 +693,7 @@ export async function collectDirectSources(state = {}) {
         backfill_pending: Number(g.cursor?.backfill_before || 0) > 0
       }])),
       telegram_backfill_pending: tgResults.some((g) => Number(g.cursor?.backfill_before || 0) > 0),
+      forced_recent_posts_per_channel: TELEGRAM_FORCE_RECENT_POSTS,
       source_errors: errors.length,
       source_health_warnings: sourceHealthWarnings.length,
     },
