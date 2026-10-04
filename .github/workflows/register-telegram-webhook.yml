@@ -1,0 +1,24 @@
+name: Register Telegram Webhook
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/register-telegram-webhook.yml"
+  workflow_dispatch:
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Register webhook
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          WEBHOOK_URL="https://car-gem-scout.vercel.app/api/telegram"
+          curl --fail-with-body -sS -X POST             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"             -H "content-type: application/json"             -d "{\"url\":\"${WEBHOOK_URL}\",\"drop_pending_updates\":true}"
+          echo
+          curl --fail-with-body -sS             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+          echo
