@@ -47,6 +47,77 @@ function money(n) {
   return n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : "нет данных";
 }
 
+function candidatesText(state) {
+  const cutoff = Date.now() - 14 * 24 * 3600 * 1000;
+  const seen = new Map();
+
+  for (const item of Object.values(state.preliminary_candidates_by_key || {})) {
+    const score = Number(item.discovery_score || 0);
+    const at = Date.parse(item.updated_at || item.first_seen_at || "");
+    if (score < 7.5 || score >= 8.5 || !at || at < cutoff) continue;
+    seen.set(item.key || item.url, item);
+  }
+
+  // Backward-compatible fallback for candidates already sitting in deep_queue
+  // before this command was introduced.
+  for (const item of Object.values(state.deep_queue || {})) {
+    const score = Number(item.discovery_score || 0);
+    if (score < 7.5 || score >= 8.5) continue;
+    const key = item.candidate_key || item.auto_ria_url || item.telegram_url || item.source_url;
+    if (seen.has(key)) continue;
+    seen.set(key, {
+      key,
+      model: item.model || "",
+      year: Number(item.year || 0),
+      discovery_score: score,
+      price_usd: Number(item.price_usd || 0),
+      mileage_km: Number(item.mileage_km || 0),
+      source: item.source || "",
+      url: item.auto_ria_url || item.telegram_url || item.source_url || "",
+      reason: item.listing_note || "в очереди на глубокую проверку Luna",
+      updated_at: item.last_queued_at || item.enqueued_at || "",
+    });
+  }
+
+  const items = [...seen.values()]
+    .sort((a,b) => {
+      const d = Number(b.discovery_score || 0) - Number(a.discovery_score || 0);
+      if (d) return d;
+      return String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
+    })
+    .slice(0, 10);
+
+  if (!items.length) {
+    return [
+      "🎯 Кандидаты до deep — preliminary 7.5–8.4",
+      "",
+      "Сейчас таких машин нет.",
+      "Сюда попадают варианты после дешёвого первичного отбора, но до полноценной VIN/history-проверки Luna."
+    ].join("\n");
+  }
+
+  const blocks = items.map((x,i) => {
+    const mileage = Number(x.mileage_km || 0) > 0
+      ? Math.round(Number(x.mileage_km)).toLocaleString("ru-RU") + " км"
+      : "нет данных";
+    const reason = String(x.reason || "").replace(/\s+/g," ").trim().slice(0,170);
+    return [
+      `${i+1}. 🎯 ${x.model || "Авто"} ${x.year || ""}`.trim(),
+      `⭐ preliminary ${Number(x.discovery_score || 0).toFixed(1)}/10 · ${money(x.price_usd)} · ${mileage}`,
+      x.source ? `📍 Источник: ${x.source}` : null,
+      reason ? `💬 ${reason}` : null,
+      x.url ? `🔗 ${x.url}` : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  return [
+    "🎯 Кандидаты до deep — preliminary 7.5–8.4",
+    "Это НЕ финальный рейтинг: VIN/history и реальные риски ещё не проверены глубоко.",
+    "",
+    ...blocks
+  ].join("\n\n").slice(0, 4000);
+}
+
 function almostText(state) {
   const items = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
@@ -218,6 +289,9 @@ function statusText(state) {
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
   const interestingCount = Object.keys(state.interesting_by_key || {}).length;
+  const preliminaryCount = Object.values(state.preliminary_candidates_by_key || {})
+    .filter((x) => Number(x.discovery_score || 0) >= 7.5 && Number(x.discovery_score || 0) < 8.5)
+    .length;
   const tgLine = telegramCoverageText(state.last_collector_stats || {});
   const deepQueue = Number(state.last_deep_queue_count || 0);
   const lastQuality = Array.isArray(state.quality_history) && state.quality_history.length
@@ -236,6 +310,7 @@ function statusText(state) {
     `🔬 Luna успешно проверила: ${Math.max(0, Number(state.last_deep_analyzed_count || 0) - Number(state.last_deep_failed_count || 0))}`,
     `⏳ Ждут глубокой проверки Luna: ${deepQueue}`,
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
+    `🎯 Кандидатов 7.5–8.4 до deep: ${preliminaryCount}`,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
     `🧩 Интересных вариантов со штрафом: ${interestingCount}`,
     `🔥 Всего отправлено ГЕМов: ${state.total_gems_sent || 0}`,
@@ -246,7 +321,7 @@ function statusText(state) {
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
     `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
-    "⌨️ /status · /almost · /interesting · /top",
+    "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
 }
 
@@ -261,18 +336,20 @@ export default async function handler(req, res) {
   }
 
   const text = String(message.text || "").trim().toLowerCase();
-  if (!/^\/(start|status|almost|interesting|top)(@\w+)?\b/.test(text)) {
+  if (!/^\/(start|status|candidates|almost|interesting|top)(@\w+)?\b/.test(text)) {
     return res.status(200).json({ ok: true });
   }
 
   const state = await loadState();
-  const reply = /^\/almost(@\w+)?\b/.test(text)
-    ? almostText(state)
-    : /^\/interesting(@\w+)?\b/.test(text)
-      ? interestingText(state)
-      : /^\/top(@\w+)?\b/.test(text)
-        ? topText(state)
-        : statusText(state);
+  const reply = /^\/candidates(@\w+)?\b/.test(text)
+    ? candidatesText(state)
+    : /^\/almost(@\w+)?\b/.test(text)
+      ? almostText(state)
+      : /^\/interesting(@\w+)?\b/.test(text)
+        ? interestingText(state)
+        : /^\/top(@\w+)?\b/.test(text)
+          ? topText(state)
+          : statusText(state);
 
   return res.status(200).json({
     method: "sendMessage",
