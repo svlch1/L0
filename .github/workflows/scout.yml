@@ -1,5 +1,4 @@
 name: Car Gem Scout
-# sequential-production-validation
 
 on:
   schedule:
