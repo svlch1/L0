@@ -590,8 +590,8 @@ async function deepAnalyzeCandidates(candidates, state) {
 
   const analyses = [];
 
-  for (let i = 0; i < candidates.length; i += 4) {
-    const batch = candidates.slice(i, i + 4);
+  for (let i = 0; i < candidates.length; i += 2) {
+    const batch = candidates.slice(i, i + 2);
     const prompt = `
 Ты — DEEP ANALYSIS-этап Car Gem Scout. Ниже уже собранные реальные объявления. Теперь глубоко проверь КАЖДОГО кандидата и верни структурированный анализ.
 
@@ -708,7 +708,7 @@ try {
       const bp = (b.target_price_trigger ? 100 : 0) + (b.price_drop_trigger ? 50 : 0) + (b.never_analyzed ? 10 : 0);
       return bp - ap;
     })
-    .slice(0, 8);
+    .slice(0, 4);
 
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
