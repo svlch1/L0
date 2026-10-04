@@ -1,0 +1,38 @@
+name: Cost And Filter Free Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/cost-filter-check.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          node --check scout.mjs
+          node --check sources.mjs
+          node --check api/telegram.js
+      - name: Collector stats only
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { collectDirectSources } from "./sources.mjs";
+          const state = JSON.parse(fs.readFileSync("seen.json", "utf8"));
+          const r = await collectDirectSources(state);
+          console.log("TG", JSON.stringify(r.stats.telegram_channels));
+          console.log("AUTO", JSON.stringify({
+            pages:r.stats.auto_ria_pages_scanned,
+            cards:r.stats.auto_ria_raw_cards,
+            daily:r.stats.daily_sweep_performed
+          }));
+          console.log("HEALTH", JSON.stringify(r.source_health_warnings));
+          NODE
