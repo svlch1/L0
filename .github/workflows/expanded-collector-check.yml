@@ -32,3 +32,5 @@ jobs:
           }))));
           if (!r.items.length) process.exit(2);
           NODE
+
+# rerun-after-pagination-cleanup
