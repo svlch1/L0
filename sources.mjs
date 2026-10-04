@@ -282,8 +282,11 @@ export async function collectDirectSources(state = {}) {
       const html = await fetchHtml(url);
       return autoRiaCards(html, url);
     } catch (error) {
-      // Некоторые редкие модели могут не иметь выдачи/второй страницы — это не должно валить весь проход.
-      errors.push(`AUTO.RIA ${url}: ${String(error?.message || error)}`);
+      const message = String(error?.message || error);
+      // 404 на ?page=2 означает, что у модели просто нет второй страницы.
+      if (!(url.includes("?page=") && message.includes("HTTP 404"))) {
+        errors.push(`AUTO.RIA ${url}: ${message}`);
+      }
       return [];
     }
   });
@@ -326,12 +329,12 @@ export async function collectDirectSources(state = {}) {
         }
       }
 
-      return [...byUrl.values()];
+      return { items: [...byUrl.values()], pages_scanned: pages.length };
     })
   );
 
   for (const group of tgResults) {
-    for (const item of group) {
+    for (const item of group.items) {
       const normalized = normalizeUrl(item.source_url);
       observed.add(normalized);
       if (!seen.has(normalized)) telegramItems.push(item);
@@ -353,7 +356,7 @@ export async function collectDirectSources(state = {}) {
       total_candidates: items.length,
       auto_ria_models: AUTO_RIA_SEARCHES.length,
       auto_ria_pages_scanned: autoUrls.length,
-      telegram_pages_scanned: tgResults.reduce((sum, group) => sum + (group.length ? 1 : 0), 0),
+      telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
       source_errors: errors.length,
     },
     errors,
