@@ -833,61 +833,86 @@ function ensureAlmostGems(state) {
   return state.almost_gems_by_key;
 }
 
+function ensureTopGems(state) {
+  if (!state.top_gems_by_key || typeof state.top_gems_by_key !== "object" || Array.isArray(state.top_gems_by_key)) {
+    state.top_gems_by_key = {};
+  }
+  return state.top_gems_by_key;
+}
+
+function compactText(value, max = 180) {
+  const s = String(value || "").replace(/\s+/g, " ").trim();
+  if (!s || s === "нет данных") return "";
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+function topGemSnapshot(a, score, candidate, nowIso, previous = {}) {
+  const pluses = (a.why_gem || [])
+    .map((x) => compactText(x, 130))
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const minus = [
+    compactText(a.major_expense_risk, 150),
+    compactText(a.seller_risk, 150),
+    compactText(a.weak_points, 150),
+    compactText(a.listing_inconsistencies, 150),
+  ].find(Boolean) || "Явных критичных минусов в итоговом анализе не найдено.";
+
+  return {
+    key: candidate.candidate_key,
+    model: a.model || candidate.model || "",
+    year: Number(a.year || candidate.year || 0),
+    trim: a.trim || "",
+    score: Number(score || 0),
+    confidence_pct: Number(a.confidence_pct || 0),
+    price_usd: Number(a.price_usd || candidate.price_usd || 0),
+    mileage_km: Number(a.mileage_km || candidate.mileage_km || 0),
+    pluses,
+    minus,
+    url: a.auto_ria_url || a.telegram_url || candidate.auto_ria_url || candidate.telegram_url || candidate.source_url || "",
+    found_at: previous.found_at || nowIso,
+    updated_at: nowIso,
+  };
+}
+
+function pruneTopGems(state, nowIso) {
+  const gems = ensureTopGems(state);
+  const cutoff = Date.parse(nowIso) - 45 * 24 * 3600 * 1000;
+
+  for (const [key, item] of Object.entries(gems)) {
+    const at = Date.parse(item.found_at || item.updated_at || "");
+    if (!at || at < cutoff) delete gems[key];
+  }
+}
+
 function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAudits, gemCount }) {
   const usage = state.last_api_usage || runUsage;
   const today = state.api_usage_today || {};
+  const watchCount = Object.keys(state.market_watch || {}).length;
   const almostCount = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
-  const watchCount = Object.keys(state.market_watch || {}).length;
-  const vinCacheCount = Object.keys(state.vin_cache || {}).length;
-  const autoCount = Number(direct?.stats?.auto_ria_candidates || 0);
-  const tgCount = Number(direct?.stats?.telegram_candidates || 0);
-  const sourceErrors = Number(direct?.stats?.source_errors || 0);
-  const modelCount = Number(direct?.stats?.auto_ria_models || 33);
-  const autoPages = Number(direct?.stats?.auto_ria_pages_scanned || 0);
-  const tgPages = Number(direct?.stats?.telegram_pages_scanned || 0);
 
   return [
     "📡 Car Gem Scout — проверка завершена",
     "",
-    "🔎 Что просмотрено",
-    `• Новых подходящих объявлений AUTO.RIA: ${autoCount}`,
-    `• Новых подходящих постов Telegram: ${tgCount}`,
-    `• AUTO.RIA: ${modelCount} целевых моделей + ротационный поиск по брендам (${autoPages} страниц)`,
-    `• Telegram: KIEVAVTO + IsAuto, просмотрено ${tgPages} страниц`,
-    state.last_exploration_brands?.length
-      ? `• Дополнительный широкий поиск: ${state.last_exploration_brands.join(", ")}`
-      : null,
+    `🔎 Кандидатов после отбора: ${discoveredCount}`,
+    `🔬 Глубоко проверено Luna: ${selectedCount}`,
+    `🧠 Финально перепроверено: ${solAudits}`,
+    `👀 Машин под наблюдением: ${watchCount}`,
+    `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
+    `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
     "",
-    "🧠 Что сделал анализ",
-    `• После первичного отбора осталось кандидатов: ${discoveredCount}`,
-    `• Глубоко проверено Luna: ${selectedCount}`,
-    `• Финально перепроверено сильных кандидатов: ${solAudits}`,
-    `• Почти гемов 7.8–8.4 в базе: ${almostCount}`,
-    `• Настоящих ГЕМов >=8.5 в этом проходе: ${gemCount}`,
-    "",
-    "👀 Что бот продолжает отслеживать",
-    `• Машин под наблюдением за ценой: ${watchCount}`,
-    `• Ждут первичного просмотра: ${state.last_source_queue_count || 0}`,
-    `• Ценовых аномалий >=10% в текущем пакете: ${state.last_price_anomaly_count || 0}`,
-    `• VIN-историй сохранено в кэше: ${vinCacheCount}`,
-    sourceErrors ? `• Ошибок источников: ${sourceErrors}` : null,
-    "",
-    "💸 Расход OpenAI API",
-    `• За этот проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
-    `• За сегодня, учтено ботом: ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
-    `• Токены: вход ${compactTokens(usage.input_tokens)} / выход ${compactTokens(usage.output_tokens)} / web-поиск ${usage.web_search_calls || 0}`,
+    `💸 Этот проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
+    `📅 Сегодня: ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     "",
     gemCount
-      ? "🔥 Ниже отправлю найденные ГЕМЫ отдельными сообщениями."
-      : "ГЕМов в этом проходе нет. Продолжаю следить за рынком.",
+      ? "👇 Ниже отправлю найденные ГЕМЫ."
+      : "ГЕМов нет — продолжаю следить за рынком.",
     "",
-    "⌨️ Команды",
-    "/status — что сейчас делает бот и статистика",
-    "/almost — машины с рейтингом 7.8–8.4",
-    "/start — показать статус / проверить бота",
-  ].filter(Boolean).join("\n");
+    "⌨️ /status · /almost · /top",
+  ].join("\n");
 }
 
 function candidateUrls(a) {
@@ -1213,7 +1238,7 @@ if (TEST_ONLY) {
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
     "Проверяю AUTO.RIA + KIEVAVTO + IsAuto и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
-    "Команды: /start или /status — статус; /almost — машины с рейтингом 7.8–8.4."
+    "Команды: /status — статус; /almost — 7.8–8.4; /top — лучшие ГЕМЫ за 30 дней."
   );
   process.exit(0);
 }
@@ -1361,6 +1386,18 @@ try {
       Number(a.price_usd || candidate.price_usd || 0) <= 26000;
 
     const mayRepeat = candidate.price_drop_trigger || candidate.target_price_trigger;
+
+    if (qualifies) {
+      const top = ensureTopGems(state);
+      top[candidate.candidate_key] = topGemSnapshot(
+        a,
+        score,
+        candidate,
+        nowIso,
+        top[candidate.candidate_key] || {}
+      );
+    }
+
     if (qualifies && (!item.alerted || mayRepeat)) {
       alerts.push({
         text: formatGemAlert(a, score, candidate),
@@ -1371,6 +1408,7 @@ try {
     }
   }
 
+  pruneTopGems(state, nowIso);
   state.last_sol_audits = solAudits;
   state.last_sol_audit_failures = solAuditFailures;
   state.last_check_at = runStartedAt;
