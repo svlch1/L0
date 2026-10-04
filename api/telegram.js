@@ -1,3 +1,4 @@
+// deploy-marker: candidates-and-all-telegram-sources
 const STATE_URL = "https://raw.githubusercontent.com/svlch1/L0/main/seen.json";
 
 function formatKyiv(iso) {
