@@ -1535,6 +1535,7 @@ async function discoverCandidates(state, directItems = []) {
 - динамика желательно около 6 сек 0–100 или быстрее;
 - главный ориентир Infiniti Q60;
 - подходят интересные BMW 3/4, Mercedes C/CLA/coupe, Lexus RC/IS, Audi A5/S5, Genesis G70 и аналогичные;
+- электрички тоже рассматривай: Tesla Model 3/Y, Polestar 2, BMW i4, Hyundai Ioniq 5/6, Kia EV6, Mustang Mach-E;
 - не тащи скучные массовые седаны;
 - Kia Stinger только при аномально выгодной сделке;
 - очевидные flood/fire/тяжёлый structural мусор не выбирай, если это прямо видно в тексте;
@@ -1577,6 +1578,7 @@ ${JSON.stringify(watchlist)}
 - эффектный спортивный/премиальный автомобиль;
 - ~6 сек 0–100 или быстрее желательно;
 - ориентир Infiniti Q60; также BMW 3/4, Mercedes C/CLA/coupe, Lexus RC/IS, Audi и аналоги;
+- EV тоже допустимы: Tesla Model 3/Y, Polestar 2, BMW i4, Ioniq 5/6, EV6, Mustang Mach-E;
 - не предлагай скучные массовые седаны;
 - максимум 10 кандидатов;
 - прямые URL обязательны;
