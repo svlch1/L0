@@ -654,6 +654,69 @@ function money(n) {
   return n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : "нет данных";
 }
 
+function compactTokens(n) {
+  n = Number(n || 0);
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  return String(n);
+}
+
+function almostSnapshot(a, score, candidate, nowIso) {
+  return {
+    key: candidate.candidate_key,
+    model: a.model || candidate.model || "",
+    year: Number(a.year || candidate.year || 0),
+    trim: a.trim || "",
+    score,
+    confidence_pct: Number(a.confidence_pct || 0),
+    price_usd: Number(a.price_usd || candidate.price_usd || 0),
+    mileage_km: Number(a.mileage_km || candidate.mileage_km || 0),
+    target_buy_price_usd: Number(a.target_buy_price_usd || 0),
+    auto_ria_url: a.auto_ria_url || candidate.auto_ria_url || "",
+    telegram_url: a.telegram_url || candidate.telegram_url || "",
+    verdict: String(a.verdict || "").slice(0, 500),
+    updated_at: nowIso,
+  };
+}
+
+function ensureAlmostGems(state) {
+  if (!state.almost_gems_by_key || typeof state.almost_gems_by_key !== "object" || Array.isArray(state.almost_gems_by_key)) {
+    state.almost_gems_by_key = {};
+  }
+  return state.almost_gems_by_key;
+}
+
+function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAudits, gemCount }) {
+  const usage = state.last_api_usage || runUsage;
+  const today = state.api_usage_today || {};
+  const almostCount = Object.values(state.almost_gems_by_key || {})
+    .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
+    .length;
+  const watchCount = Object.keys(state.market_watch || {}).length;
+  const autoCount = Number(direct?.stats?.auto_ria_candidates || 0);
+  const tgCount = Number(direct?.stats?.telegram_candidates || 0);
+  const sourceErrors = Number(direct?.stats?.source_errors || 0);
+
+  return [
+    "📡 Car Gem Scout — проход завершён",
+    "",
+    `📥 Прямой сбор: AUTO.RIA ${autoCount} / Telegram ${tgCount}`,
+    `🧲 После discovery: ${discoveredCount}`,
+    `🔬 Luna deep-analysis: ${selectedCount}`,
+    `🧠 Sol final audit: ${solAudits}`,
+    `🟡 Почти гемов 7.8–8.4: ${almostCount} (команда /almost)`,
+    `👀 Под price-watch: ${watchCount}`,
+    `🔥 ГЕМов >=8.5 в этом проходе: ${gemCount}`,
+    sourceErrors ? `⚠️ Ошибок источников: ${sourceErrors}` : null,
+    "",
+    `💸 API проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
+    `🪙 Tokens: in ${compactTokens(usage.input_tokens)} / out ${compactTokens(usage.output_tokens)} / web ${usage.web_search_calls || 0}`,
+    `📅 API сегодня (учтено ботом): ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
+    "",
+    gemCount ? "👇 Ниже отправлю найденные ГЕМЫ отдельными сообщениями." : "ГЕМов нет — следующий проход по расписанию.",
+  ].filter(Boolean).join("\n");
+}
+
 function candidateUrls(a) {
   const rows = [];
   if (a.auto_ria_url) rows.push("AUTO.RIA: " + a.auto_ria_url);
@@ -947,7 +1010,7 @@ if (TEST_ONLY) {
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
     "Проверяю AUTO.RIA + KIEVAVTO + IsAuto и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
-    "Команды: /start или /status — текущий статус бота."
+    "Команды: /start или /status — статус; /almost — машины с рейтингом 7.8–8.4."
   );
   process.exit(0);
 }
@@ -1003,6 +1066,7 @@ try {
 
   const lunaByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
   const watch = ensureMarketWatch(state);
+  const almost = ensureAlmostGems(state);
   const alerts = [];
   let solAudits = 0;
   let solAuditFailures = 0;
@@ -1059,6 +1123,17 @@ try {
     item.needs_sol_audit = shouldAuditWithSol && !solAuditOk;
     watch[candidate.candidate_key] = item;
 
+    if (
+      !a.hard_reject &&
+      score >= 7.8 &&
+      score < 8.5 &&
+      Number(a.price_usd || candidate.price_usd || 0) <= 26000
+    ) {
+      almost[candidate.candidate_key] = almostSnapshot(a, score, candidate, nowIso);
+    } else {
+      delete almost[candidate.candidate_key];
+    }
+
     const qualifies =
       solAuditOk &&
       !a.hard_reject &&
@@ -1089,8 +1164,16 @@ try {
     state.last_found_count = 0;
     state.last_sent_count = 0;
     saveState(state);
+    await sendText(chatId, formatRunSummary({
+      state,
+      direct,
+      discoveredCount: discovered.length,
+      selectedCount: selected.length,
+      solAudits,
+      gemCount: 0,
+    }));
     console.log(
-      `Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; no qualifying gem; estimated API cost: $${runUsage.estimated_cost_usd.toFixed(4)}.`
+      `Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; no qualifying gem; estimated API cost: ${runUsage.estimated_cost_usd.toFixed(4)}.`
     );
     process.exit(0);
   }
@@ -1098,6 +1181,16 @@ try {
   state.last_check_status = "found";
   state.last_found_count = alerts.length;
   state.last_sent_count = 0;
+  saveState(state);
+
+  await sendText(chatId, formatRunSummary({
+    state,
+    direct,
+    discoveredCount: discovered.length,
+    selectedCount: selected.length,
+    solAudits,
+    gemCount: alerts.length,
+  }));
 
   if (alerts.length > 1) {
     await sendText(chatId, `🔥 За этот проход найдено ${alerts.length} ГЕМОВ. Отправляю каждый отдельным сообщением.`);
@@ -1130,5 +1223,14 @@ try {
   state.completed_runs = Number(state.completed_runs || 0) + 1;
   persistApiUsage(state);
   saveState(state);
+  try {
+    await sendText(
+      chatId,
+      "⚠️ Car Gem Scout — проход завершился ошибкой\n\n" +
+      state.last_error +
+      "\n\n💸 API до ошибки: ~$" + Number(runUsage.estimated_cost_usd || 0).toFixed(3) +
+      "\nСледующий плановый проход попробует снова."
+    );
+  } catch {}
   throw error;
 }
