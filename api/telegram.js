@@ -161,6 +161,10 @@ function statusText(state) {
   const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
   const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
   const deepQueue = Number(state.last_deep_queue_count || 0);
+  const lastQuality = Array.isArray(state.quality_history) && state.quality_history.length
+    ? state.quality_history[state.quality_history.length - 1]
+    : null;
+  const cheapReviewed = Number(lastQuality?.source_batch_to_luna || 0);
 
   return [
     healthy ? "🟢 Car Gem Scout работает" : "🔴 Car Gem Scout: есть ошибка",
@@ -168,7 +172,8 @@ function statusText(state) {
     `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
     `🔎 Итог: ${result}`,
     "",
-    `🎯 Потенциальных кандидатов после первого отбора: ${state.last_discovered_count || 0}`,
+    cheapReviewed ? `👓 Luna первично просмотрела: ${cheapReviewed}` : null,
+    `🎯 Из них перспективными сочла: ${state.last_discovered_count || 0}`,
     `🔬 Luna успешно проверила: ${Math.max(0, Number(state.last_deep_analyzed_count || 0) - Number(state.last_deep_failed_count || 0))}`,
     `⏳ Ждут глубокой проверки Luna: ${deepQueue}`,
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
