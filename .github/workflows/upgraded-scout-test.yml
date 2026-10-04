@@ -1,0 +1,39 @@
+name: Upgraded Scout Production Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/upgraded-scout-test.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run upgraded scout
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TEST_ONLY: "false"
+          GITHUB_EVENT_NAME: "manual-upgraded-test"
+        run: node scout.mjs
+      - name: Save scout state
+        if: always()
+        run: |
+          if git diff --quiet -- seen.json; then
+            exit 0
+          fi
+          git config user.name "Car Gem Scout"
+          git config user.email "car-gem-scout@users.noreply.github.com"
+          git add seen.json
+          git commit -m "Update Car Gem Scout state"
+          git push
