@@ -301,7 +301,7 @@ function statusText(state) {
     `🔁 Всего завершённых проходов: ${state.completed_runs || 0}`,
     `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
-    "Источники: AUTO.RIA + 9 Telegram-каналов",
+    "Источники: AUTO.RIA + 10 Telegram-каналов",
     "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
   ].join("\n");
 }
@@ -609,7 +609,7 @@ async function runDailyAnalyst(state, chatId) {
       gem: ">=8.5 and confidence>=70",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
-      sources: "AUTO.RIA + 9 Telegram-каналов",
+      sources: "AUTO.RIA + 10 Telegram-каналов",
       schedule: "every 4 hours"
     }
   };
@@ -1570,7 +1570,7 @@ ${JSON.stringify(watchlist)}
 Ты — DISCOVERY-этап Car Gem Scout для покупки первой машины в Украине.
 
 Прямые collectors в этом проходе не дали данных, поэтому сделай резервный web-search.
-Проверь AUTO.RIA и публичные Telegram-источники: KIEVAVTO, IsAuto, Imperiya Auto, Grand The Auto, Автобазар Дніпро, Karavan Дніпро, Hapai Auto и Griznes Auto.
+Проверь AUTO.RIA и публичные Telegram-источники: KIEVAVTO, IsAuto, Imperiya Auto, Grand The Auto, Автобазар Дніпро, Karavan Дніпро, Hapai Auto, Griznes Auto, Авто Резіденс и Magnat Auto.
 
 КРИТЕРИИ:
 - бюджет до $25,000; до ~$26,500 только для очень сильного варианта;
@@ -1784,7 +1784,7 @@ if (TEST_ONLY) {
   await sendText(chatId,
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
-    "Проверяю AUTO.RIA + 9 Telegram-каналов и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
+    "Проверяю AUTO.RIA + 10 Telegram-каналов и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
     "Команды: /status — статус; /candidates — preliminary 7.5–8.4 до deep; /almost — 7.8–8.4 после deep; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней."
   );
   process.exit(0);
