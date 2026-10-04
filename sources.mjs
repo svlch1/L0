@@ -101,17 +101,18 @@ function normalizeUrl(url) {
 
 function extractPriceUsd(text) {
   const values = [];
-  for (const m of String(text).matchAll(/(?:\$\s*)?(\d{1,3}(?:[ .]\d{3})+|\d{4,6})\s*\$/g)) {
-    const n = Number(m[1].replace(/[ .]/g, ""));
+  for (const m of String(text).matchAll(/(?:\$\s*)?(\d{1,3}(?:[ .,]\d{3})+|\d{4,6})\s*\$/g)) {
+    const n = Number(m[1].replace(/[ .,]/g, ""));
     if (n >= 3000 && n <= 300000) values.push(n);
   }
   return values[0] || 0;
 }
 
 function extractMileageKm(text) {
-  let m = String(text).match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис|тыс|k)\.?\s*км/i);
+  const s = String(text);
+  let m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис|тыс|k|к)\.?\s*(?:км|пробіг|пробег)?/i);
   if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000);
-  m = String(text).match(/(\d{1,3}(?:[ .]\d{3})?)\s*км/i);
+  m = s.match(/(\d{1,3}(?:[ .]\d{3})?)\s*км/i);
   if (m) {
     const n = Number(m[1].replace(/ /g, ""));
     if (n >= 1000) return n;
@@ -486,14 +487,18 @@ function autoRiaCards(html, searchUrl, exploration = false) {
 }
 
 function telegramPosts(html, channel) {
-  const markers = [...html.matchAll(new RegExp(`data-post=["']${channel}/(\\d+)["']`, "gi"))];
   const out = [];
+  const wrappers = String(html).split(/<div class=["'][^"']*tgme_widget_message_wrap[^"']*["']/i).slice(1);
 
-  for (let i = 0; i < markers.length; i++) {
-    const start = markers[i].index;
-    const end = i + 1 < markers.length ? markers[i + 1].index : Math.min(html.length, start + 30000);
-    const text = decodeHtml(html.slice(start, end)).slice(0, 4000);
-    const id = markers[i][1];
+  for (const wrapper of wrappers) {
+    const idMatch = wrapper.match(new RegExp(`data-post=["']${channel}/(\\d+)["']`, "i"));
+    if (!idMatch) continue;
+
+    const textMatch = wrapper.match(/<div class=["'][^"']*tgme_widget_message_text[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+    if (!textMatch) continue;
+
+    const text = decodeHtml(textMatch[1]).slice(0, 5000);
+    const id = idMatch[1];
     const url = `https://t.me/${channel}/${id}`;
     const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
