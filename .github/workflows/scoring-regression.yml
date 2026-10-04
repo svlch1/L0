@@ -1,0 +1,33 @@
+name: Scoring Regression Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/scoring-regression.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax and scoring regression
+        run: |
+          node --check scoring.mjs
+          node --check scout.mjs
+          node --check sources.mjs
+          node --check api/telegram.js
+          node --input-type=module <<'NODE'
+          import { CALIBRATION_ANCHORS, weightedScore, runScoringRegression } from "./scoring.mjs";
+          for (const x of CALIBRATION_ANCHORS) {
+            console.log("BENCHMARK", x.name, weightedScore(x.scores), "expected", x.expected.join("-"));
+          }
+          const failures = runScoringRegression();
+          console.log("FAILURES", JSON.stringify(failures));
+          if (failures.length) process.exit(2);
+          NODE
