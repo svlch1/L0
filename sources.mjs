@@ -10,6 +10,7 @@ const AUTO_RIA_SEARCHES = [
   "https://auto.ria.com/uk/car/lexus/rc/price/25000/amp/",
   "https://auto.ria.com/uk/car/lexus/is/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/a5/price/25000/amp/",
+  "https://auto.ria.com/uk/car/audi/s3/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/s4/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/s5/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/tt/price/25000/amp/",
