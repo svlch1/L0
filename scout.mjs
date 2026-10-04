@@ -183,7 +183,7 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: \`Bearer \${OPENAI_API_KEY}\`,
+      authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
       model: "gpt-6.1-sol",
@@ -212,7 +212,7 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
   });
 
   const raw = await r.text();
-  if (!r.ok) throw new Error(\`OpenAI API failed \${r.status}: \${raw.slice(0, 1200)}\`);
+  if (!r.ok) throw new Error(`OpenAI API failed ${r.status}: ${raw.slice(0, 1200)}`);
   const data = JSON.parse(raw);
   const text = outputText(data);
   if (!text) throw new Error("OpenAI returned empty structured output");
@@ -470,70 +470,70 @@ function candidateUrls(a) {
 function formatGemAlert(a, score, priceMeta = {}) {
   const why = (a.why_gem || []).slice(0, 4).map((x) => "— " + x).join("\n") || "— Сильная совокупность цены, состояния и ликвидности.";
   const priceDrop = priceMeta.price_drop_trigger
-    ? \`\n📉 PRICE DROP: \${money(priceMeta.previous_price_usd)} → \${money(a.price_usd)} (-\${money(priceMeta.price_drop_usd).replace("$","$")}, \${priceMeta.price_drop_pct}%)\`
+    ? `\n📉 PRICE DROP: ${money(priceMeta.previous_price_usd)} → ${money(a.price_usd)} (-${money(priceMeta.price_drop_usd).replace("$","$")}, ${priceMeta.price_drop_pct}%)`
     : "";
 
-  return \`🔥 ГЕМ / СМОТРЕТЬ СРОЧНО — \${a.model} \${a.year} \${a.trim}\${priceDrop}
+  return `🔥 ГЕМ / СМОТРЕТЬ СРОЧНО — ${a.model} ${a.year} ${a.trim}${priceDrop}
 
-💵 Цена: \${money(a.price_usd)}
-🛣 Пробег: \${a.mileage_km > 0 ? a.mileage_km.toLocaleString("ru-RU") + " км" : "нет данных"}
-⚙️ \${a.engine_transmission_drive}
-🏁 0–100: \${a.zero_to_100}
-⭐ Рейтинг покупки: \${score}/10
-🎯 Уверенность: \${a.confidence_pct}%
+💵 Цена: ${money(a.price_usd)}
+🛣 Пробег: ${a.mileage_km > 0 ? a.mileage_km.toLocaleString("ru-RU") + " км" : "нет данных"}
+⚙️ ${a.engine_transmission_drive}
+🏁 0–100: ${a.zero_to_100}
+⭐ Рейтинг покупки: ${score}/10
+🎯 Уверенность: ${a.confidence_pct}%
 
 📊 РАЗБИВКА РЕЙТИНГА
-Цена / рынок: \${a.price_score}/10
-История / состояние: \${a.history_score}/10
-Техника / риск расходов: \${a.technical_score}/10
-Ликвидность: \${a.liquidity_score}/10
-Эмоции / динамика: \${a.emotion_score}/10
-Комплектация: \${a.trim_score}/10
+Цена / рынок: ${a.price_score}/10
+История / состояние: ${a.history_score}/10
+Техника / риск расходов: ${a.technical_score}/10
+Ликвидность: ${a.liquidity_score}/10
+Эмоции / динамика: ${a.emotion_score}/10
+Комплектация: ${a.trim_score}/10
 
 🔗 ГДЕ НАШЁЛ
-\${candidateUrls(a)}
+${candidateUrls(a)}
 
 💎 ПОЧЕМУ ЭТО ГЕМ
-\${why}
+${why}
 
 🇺🇸 ИСТОРИЯ США
-VIN: \${a.vin || "нет данных"}
-Аукцион / lot / дата: \${a.auction_lot_date}
-Primary / Secondary Damage: \${a.primary_secondary_damage}
-Run & Drive / Starts: \${a.run_drive_starts}
-Airbags: \${a.airbags}
-Силовая структура: \${a.structure}
-Flood/Water: \${a.flood_water}
-Пробег на аукционе: \${a.auction_mileage}
-Фото до ремонта: \${a.pre_repair_photos_summary}
-Estimated Repair Cost: \${money(a.estimated_repair_cost_usd)}
-ACV: \${money(a.acv_usd)}
-Retail Value: \${money(a.retail_value_usd)}
-Final Bid: \${money(a.final_bid_usd)}
-Repair Estimate / ACV: \${a.repair_acv_pct > 0 ? a.repair_acv_pct + "%" : "нет данных"}
+VIN: ${a.vin || "нет данных"}
+Аукцион / lot / дата: ${a.auction_lot_date}
+Primary / Secondary Damage: ${a.primary_secondary_damage}
+Run & Drive / Starts: ${a.run_drive_starts}
+Airbags: ${a.airbags}
+Силовая структура: ${a.structure}
+Flood/Water: ${a.flood_water}
+Пробег на аукционе: ${a.auction_mileage}
+Фото до ремонта: ${a.pre_repair_photos_summary}
+Estimated Repair Cost: ${money(a.estimated_repair_cost_usd)}
+ACV: ${money(a.acv_usd)}
+Retail Value: ${money(a.retail_value_usd)}
+Final Bid: ${money(a.final_bid_usd)}
+Repair Estimate / ACV: ${a.repair_acv_pct > 0 ? a.repair_acv_pct + "%" : "нет данных"}
 
 🔧 ТЕХНИКА
-Типичные слабые места: \${a.weak_points}
-Что проверить: \${a.inspection_checklist}
-Риск крупных расходов: \${a.major_expense_risk}
-Риск по продавцу/объявлению: \${a.seller_risk}
-Несостыковки: \${a.listing_inconsistencies}
+Типичные слабые места: ${a.weak_points}
+Что проверить: ${a.inspection_checklist}
+Риск крупных расходов: ${a.major_expense_risk}
+Риск по продавцу/объявлению: ${a.seller_risk}
+Несостыковки: ${a.listing_inconsistencies}
 
 💰 ДЕНЬГИ
-Рынок аналогов: \${money(a.market_low_usd)}–\${money(a.market_high_usd)}
-Real Buy-In Cost первые ~6 мес.: \${money(a.real_buy_in_low_usd)}–\${money(a.real_buy_in_high_usd)}
-Цена, при которой точно интересно: \${money(a.target_buy_price_usd)}
-Перепродажа ~1 год: \${money(a.resale_1y_low_usd)}–\${money(a.resale_1y_high_usd)}
-Перепродажа ~2 года: \${money(a.resale_2y_low_usd)}–\${money(a.resale_2y_high_usd)}
-Ожидаемая потеря: \${a.expected_loss_note}
+Рынок аналогов: ${money(a.market_low_usd)}–${money(a.market_high_usd)}
+Real Buy-In Cost первые ~6 мес.: ${money(a.real_buy_in_low_usd)}–${money(a.real_buy_in_high_usd)}
+Цена, при которой точно интересно: ${money(a.target_buy_price_usd)}
+Перепродажа ~1 год: ${money(a.resale_1y_low_usd)}–${money(a.resale_1y_high_usd)}
+Перепродажа ~2 года: ${money(a.resale_2y_low_usd)}–${money(a.resale_2y_high_usd)}
+Ожидаемая потеря: ${a.expected_loss_note}
 
 🏁 ВЕРДИКТ
-\${a.verdict}\`;
+${a.verdict}`;
 }
 
 async function discoverCandidates(state) {
   const watchlist = compactWatchlist(state);
-  const prompt = \`
+  const prompt = `
 Ты — DISCOVERY-этап Car Gem Scout для покупки первой машины в Украине.
 
 ТВОЯ ЗАДАЧА СЕЙЧАС НЕ ДЕЛАТЬ ГЛУБОКИЙ АНАЛИЗ.
@@ -561,10 +561,10 @@ async function discoverCandidates(state) {
 
 PRICE WATCH:
 Ниже машины, которые мы уже видели. По возможности перепроверь, не изменилась ли у них цена и не перевыложены ли они:
-\${JSON.stringify(watchlist)}
+${JSON.stringify(watchlist)}
 
 Цель — высокая полнота сбора. Лучше 15 релевантных кандидатов для второго этапа, чем сразу выбрать одного и пропустить более выгодный.
-\`;
+`;
 
   return openaiJson({
     prompt,
@@ -578,11 +578,11 @@ PRICE WATCH:
 async function deepAnalyzeCandidates(candidates, state) {
   if (!candidates.length) return { analyses: [] };
 
-  const prompt = \`
+  const prompt = `
 Ты — DEEP ANALYSIS-этап Car Gem Scout. Ниже уже собранные реальные объявления. Теперь глубоко проверь КАЖДОГО кандидата и верни структурированный анализ.
 
 КАНДИДАТЫ:
-\${JSON.stringify(candidates)}
+${JSON.stringify(candidates)}
 
 МОЙ ПРОФИЛЬ ПОКУПКИ:
 - первая машина в Украине;
@@ -636,7 +636,7 @@ TARGET PRICE:
 
 Не выдумывай отсутствующие значения. Для неизвестных чисел ставь 0, в строках пиши "нет данных".
 candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входного кандидата.
-\`;
+`;
 
   return openaiJson({
     prompt,
@@ -742,7 +742,7 @@ try {
     state.last_found_count = 0;
     state.last_sent_count = 0;
     saveState(state);
-    console.log(\`Discovery: \${discovered.length}; deep analyzed: \${selected.length}; no qualifying gem. Telegram stays silent.\`);
+    console.log(`Discovery: ${discovered.length}; deep analyzed: ${selected.length}; no qualifying gem. Telegram stays silent.`);
     process.exit(0);
   }
 
@@ -751,7 +751,7 @@ try {
   state.last_sent_count = 0;
 
   if (alerts.length > 1) {
-    await sendText(chatId, \`🔥 За этот проход найдено \${alerts.length} ГЕМОВ. Отправляю каждый отдельным сообщением.\`);
+    await sendText(chatId, `🔥 За этот проход найдено ${alerts.length} ГЕМОВ. Отправляю каждый отдельным сообщением.`);
   }
 
   for (const alert of alerts.slice(0, 5)) {
@@ -770,7 +770,7 @@ try {
   }
 
   saveState(state);
-  console.log(\`\${state.last_sent_count} gem(s) sent to Telegram. Discovery: \${discovered.length}; deep analyzed: \${selected.length}.\`);
+  console.log(`${state.last_sent_count} gem(s) sent to Telegram. Discovery: ${discovered.length}; deep analyzed: ${selected.length}.`);
 
 } catch (error) {
   state.last_check_at = runStartedAt;
