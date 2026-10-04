@@ -1,0 +1,28 @@
+name: EV Scout Syntax Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ev-scout-check.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: |
+          node --check sources.mjs
+          node --check scout.mjs
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const s=fs.readFileSync("sources.mjs","utf8");
+          const required=["tesla/model-3","tesla/model-y","polestar/2","bmw/i4","hyundai/ioniq-5","hyundai/ioniq-6","kia/ev6","ford/mustang-mach-e"];
+          console.log("EV_TARGETS", required.filter(x=>s.includes(x)).length);
+          if (required.some(x=>!s.includes(x))) process.exit(2);
+          NODE
