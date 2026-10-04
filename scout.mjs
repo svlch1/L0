@@ -696,11 +696,15 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
   const autoCount = Number(direct?.stats?.auto_ria_candidates || 0);
   const tgCount = Number(direct?.stats?.telegram_candidates || 0);
   const sourceErrors = Number(direct?.stats?.source_errors || 0);
+  const modelCount = Number(direct?.stats?.auto_ria_models || 0);
+  const autoPages = Number(direct?.stats?.auto_ria_pages_scanned || 0);
+  const tgPages = Number(direct?.stats?.telegram_pages_scanned || 0);
 
   return [
     "📡 Car Gem Scout — проход завершён",
     "",
     `📥 Прямой сбор: AUTO.RIA ${autoCount} / Telegram ${tgCount}`,
+    `🗺 Покрытие: AUTO.RIA ${modelCount} моделей / ${autoPages} страниц; Telegram ${tgPages} страниц`,
     `🧲 После discovery: ${discoveredCount}`,
     `🔬 Luna deep-analysis: ${selectedCount}`,
     `🧠 Sol final audit: ${solAudits}`,
