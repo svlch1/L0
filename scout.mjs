@@ -90,6 +90,7 @@ async function sendText(chatId, text) {
       text: chunk,
       disable_web_page_preview: false,
     });
+    await new Promise((resolve) => setTimeout(resolve, 1300));
   }
 }
 
@@ -107,6 +108,91 @@ function saveSeen(seen, text) {
   seen.vins = [...new Set([...(seen.vins || []), ...vins])].slice(-500);
   seen.urls = [...new Set([...(seen.urls || []), ...urls])].slice(-1000);
   fs.writeFileSync("seen.json", JSON.stringify(seen, null, 2) + "\n");
+}
+
+
+function saveState(state) {
+  fs.writeFileSync("seen.json", JSON.stringify(state, null, 2) + "\n");
+}
+
+function formatKyiv(iso) {
+  if (!iso) return "ещё не было";
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
+
+function nextScheduledCheck() {
+  const d = new Date();
+  d.setUTCMinutes(0, 0, 0);
+  d.setUTCHours(Math.floor(d.getUTCHours() / 4) * 4 + 4);
+  return d.toISOString();
+}
+
+function statusText(state) {
+  let result = "ещё нет завершённых проверок";
+  if (state.last_check_status === "no_gem") {
+    result = "ничего достойного не найдено";
+  } else if (state.last_check_status === "found") {
+    result = `найдено и показано: ${state.last_sent_count || 0}`;
+  } else if (state.last_check_status === "error") {
+    result = `ошибка: ${state.last_error || "неизвестная"}`;
+  } else if (state.last_check_status === "test") {
+    result = "тест Telegram прошёл успешно";
+  }
+
+  return [
+    "🟢 Car Gem Scout работает",
+    "",
+    "⏱ Режим: каждые 4 часа / 6 раз в сутки",
+    `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
+    `🔎 Результат: ${result}`,
+    `📊 Всего показано гемов: ${state.total_gems_sent || 0}`,
+    `🔁 Всего завершённых проходов: ${state.completed_runs || 0}`,
+    `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck())}`,
+    "",
+    "Источники: AUTO.RIA + KIEVAVTO + IsAuto",
+    "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
+  ].join("\n");
+}
+
+async function handleCommands(chatId, state) {
+  const offset = Number(state.telegram_update_offset || 0);
+  const updates = await telegram("getUpdates", {
+    offset: offset ? offset + 1 : undefined,
+    limit: 100,
+    timeout: 0,
+  });
+
+  let changed = false;
+  for (const update of updates) {
+    if (Number(update.update_id) > Number(state.telegram_update_offset || 0)) {
+      state.telegram_update_offset = update.update_id;
+      changed = true;
+    }
+
+    const msg = update.message;
+    if (!msg?.chat?.id || String(msg.chat.id) !== String(chatId)) continue;
+    const text = String(msg.text || "").trim().toLowerCase();
+    if (/^\/(start|status)(@\w+)?\b/.test(text)) {
+      await sendText(chatId, statusText(state));
+    }
+  }
+
+  if (changed) saveState(state);
+}
+
+function splitGems(text) {
+  const parts = text
+    .split(/(?=🔥\s*ГЕМ\s*\/\s*СМОТРЕТЬ\s*СРОЧНО)/i)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return parts.length ? parts : [text.trim()];
 }
 
 async function research(seen) {
@@ -174,7 +260,7 @@ async function research(seen) {
 ЖЕСТКИЙ ФИЛЬТР:
 Присылай машину только если итогово она заслуживает минимум 8.5/10 и ты сам после проверки считаешь ее реально хорошей покупкой.
 Лучше НИЧЕГО не прислать, чем прислать посредственный вариант.
-Максимум 1–3 машины за запуск; предпочтительно один лучший ГЕМ.
+Максимум 1–5 машин за запуск; предпочтительно 1–3 лучших ГЕМА. Не добивай количество искусственно.
 
 УЖЕ ПРИСЫЛАЛИ РАНЬШЕ — НЕ ПОВТОРЯЙ:
 VIN: ${(seen.vins || []).join(", ") || "нет"}
@@ -281,27 +367,68 @@ Repair Estimate / ACV: ...%
 
 if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
 
+const runStartedAt = new Date().toISOString();
 const chatId = await getChatId();
+const state = loadSeen();
+
+await handleCommands(chatId, state);
 
 if (TEST_ONLY) {
+  state.last_check_at = runStartedAt;
+  state.last_check_status = "test";
+  state.last_error = null;
+  state.completed_runs = Number(state.completed_runs || 0) + 1;
+  saveState(state);
   await sendText(chatId,
     "✅ Car Gem Scout подключён.\n\n" +
-    "Я буду проверять AUTO.RIA + KIEVAVTO + IsAuto два раза в день и писать сюда только когда найду реальный ГЕМ.\n\n" +
-    "В каждом алерте будут прямые ссылки на объявление/Telegram-пост и историю США."
+    "Режим: каждые 4 часа / 6 раз в сутки.\n" +
+    "Проверяю AUTO.RIA + KIEVAVTO + IsAuto и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
+    "Команды: /start или /status — текущий статус бота."
   );
   process.exit(0);
 }
 
 if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 
-const seen = loadSeen();
-const result = await research(seen);
+try {
+  const result = await research(state);
 
-if (!result || result === "NO_GEM" || result.includes("NO_GEM")) {
-  console.log("No gem found. Telegram stays silent.");
-  process.exit(0);
+  state.last_check_at = runStartedAt;
+  state.completed_runs = Number(state.completed_runs || 0) + 1;
+  state.last_error = null;
+
+  if (!result || result === "NO_GEM" || result.includes("NO_GEM")) {
+    state.last_check_status = "no_gem";
+    state.last_found_count = 0;
+    state.last_sent_count = 0;
+    saveState(state);
+    console.log("No gem found. Telegram stays silent.");
+    process.exit(0);
+  }
+
+  const gems = splitGems(result).slice(0, 5);
+  state.last_check_status = "found";
+  state.last_found_count = gems.length;
+  state.last_sent_count = 0;
+
+  if (gems.length > 1) {
+    await sendText(chatId, `🔥 За этот проход найдено ${gems.length} ГЕМОВ. Отправляю каждый отдельным сообщением.`);
+  }
+
+  for (const gem of gems) {
+    await sendText(chatId, gem);
+    state.last_sent_count += 1;
+    state.total_gems_sent = Number(state.total_gems_sent || 0) + 1;
+    saveSeen(state, gem);
+  }
+
+  saveState(state);
+  console.log(`${gems.length} gem(s) sent to Telegram.`);
+} catch (error) {
+  state.last_check_at = runStartedAt;
+  state.last_check_status = "error";
+  state.last_error = String(error?.message || error).slice(0, 500);
+  state.completed_runs = Number(state.completed_runs || 0) + 1;
+  saveState(state);
+  throw error;
 }
-
-await sendText(chatId, result);
-saveSeen(seen, result);
-console.log("Gem sent to Telegram.");
