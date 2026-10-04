@@ -641,13 +641,29 @@ function selectSourceBatch(state, priceChangedItems = [], limit = 32) {
 function markSourceBatchProcessed(state, batch) {
   const queue = ensureSourceQueue(state);
   const urls = [];
+  if (!state.source_price_watch || typeof state.source_price_watch !== "object" || Array.isArray(state.source_price_watch)) {
+    state.source_price_watch = {};
+  }
 
   for (const item of batch || []) {
     const url = sourceUrl(item);
     if (!url) continue;
     urls.push(url);
     delete queue[url];
+
+    const price = Number(item.price_hint_usd || 0);
+    if (price > 0) {
+      state.source_price_watch[url] = {
+        last_price_usd: price,
+        updated_at: new Date().toISOString(),
+      };
+    }
   }
+
+  const priceEntries = Object.entries(state.source_price_watch)
+    .sort((x, y) => String(y[1].updated_at || "").localeCompare(String(x[1].updated_at || "")))
+    .slice(0, 5000);
+  state.source_price_watch = Object.fromEntries(priceEntries);
 
   commitObservedUrls(state, urls);
   state.last_source_queue_count = Object.keys(queue).length;
