@@ -625,8 +625,10 @@ function selectSourceBatch(state, priceChangedItems = [], limit = 32) {
   }));
 
   const changedUrls = new Set(changed.map(sourceUrl).filter(Boolean));
+  const now = Date.now();
   const queued = Object.values(queue)
     .filter((x) => !changedUrls.has(sourceUrl(x)))
+    .filter((x) => !x.not_before || Date.parse(x.not_before) <= now)
     .map((x) => ({
       ...x,
       queue_age_hours: Math.round(Math.max(0, (Date.now() - (Date.parse(x.first_seen_at || "") || Date.now())) / 3600000) * 10) / 10,
@@ -649,6 +651,197 @@ function markSourceBatchProcessed(state, batch) {
 
   commitObservedUrls(state, urls);
   state.last_source_queue_count = Object.keys(queue).length;
+}
+
+function scheduleSecondChance(state, batch, discoveryCandidates, nowIso) {
+  const selectedUrls = new Set(
+    (discoveryCandidates || [])
+      .map((x) => normalizeUrl(x.auto_ria_url || x.telegram_url || x.source_url || ""))
+      .filter(Boolean)
+  );
+  const queue = ensureSourceQueue(state);
+  let scheduled = 0;
+
+  for (const item of batch || []) {
+    const url = sourceUrl(item);
+    if (!url || selectedUrls.has(url)) continue;
+
+    const attempts = Number(item.second_chance_attempts || 0);
+    if (attempts >= 2) continue;
+
+    const price = Number(item.price_hint_usd || 0);
+    const mileage = Number(item.mileage_hint_km || 0);
+    const anomaly = Number(item.price_anomaly_pct || 0);
+    const telegram = item.source === "KIEVAVTO" || item.source === "IsAuto";
+    const interesting =
+      anomaly >= 8 ||
+      telegram ||
+      (price > 0 && price <= 23500 && mileage > 0 && mileage <= 65000) ||
+      (item.exploration && price > 0 && price <= 25000 && (!mileage || mileage <= 90000));
+
+    if (!interesting) continue;
+
+    const delayHours = attempts === 0 ? 48 : 96;
+    const next = new Date(Date.parse(nowIso) + delayHours * 3600000).toISOString();
+    queue[url] = {
+      ...compactQueuedSource(item, nowIso, queue[url] || item),
+      second_chance_attempts: attempts + 1,
+      not_before: next,
+      second_chance: true,
+    };
+    scheduled += 1;
+  }
+
+  state.last_second_chance_scheduled = scheduled;
+  state.last_source_queue_count = Object.keys(queue).length;
+  return scheduled;
+}
+
+function enrichDiscoveryCandidates(candidates, sourceBatch) {
+  const byUrl = new Map(
+    (sourceBatch || [])
+      .map((x) => [sourceUrl(x), x])
+      .filter(([url]) => Boolean(url))
+  );
+
+  return (candidates || []).map((candidate) => {
+    const url = normalizeUrl(candidate.auto_ria_url || candidate.telegram_url || candidate.source_url || "");
+    const meta = byUrl.get(url) || {};
+    return {
+      ...candidate,
+      market_median_hint_usd: Number(meta.market_median_hint_usd || 0),
+      price_anomaly_pct: Number(meta.price_anomaly_pct || 0),
+      queue_age_hours: Number(meta.queue_age_hours || 0),
+      exploration: Boolean(meta.exploration),
+      source_first_seen_at: meta.first_seen_at || "",
+    };
+  });
+}
+
+function ensureDeepQueue(state) {
+  if (!state.deep_queue || typeof state.deep_queue !== "object" || Array.isArray(state.deep_queue)) {
+    state.deep_queue = {};
+  }
+  return state.deep_queue;
+}
+
+function enqueueDeepCandidates(state, candidates, nowIso) {
+  const queue = ensureDeepQueue(state);
+
+  for (const candidate of candidates || []) {
+    if (!candidate?.candidate_key) continue;
+    const needsDeep =
+      candidate.needs_sol_audit ||
+      candidate.never_analyzed ||
+      candidate.price_drop_trigger ||
+      candidate.target_price_trigger;
+    if (!needsDeep) continue;
+
+    const previous = queue[candidate.candidate_key] || {};
+    queue[candidate.candidate_key] = {
+      ...previous,
+      ...candidate,
+      candidate_key: candidate.candidate_key,
+      enqueued_at: previous.enqueued_at || nowIso,
+      last_queued_at: nowIso,
+      deep_attempts: Number(previous.deep_attempts || 0),
+      deep_not_before: previous.deep_not_before || "",
+    };
+  }
+
+  const entries = Object.entries(queue)
+    .sort((a, b) => String(b[1].last_queued_at || "").localeCompare(String(a[1].last_queued_at || "")))
+    .slice(0, 120);
+  state.deep_queue = Object.fromEntries(entries);
+  return state.deep_queue;
+}
+
+function deepWaitHours(item) {
+  const at = Date.parse(item.enqueued_at || "");
+  if (!at) return 0;
+  return Math.max(0, (Date.now() - at) / 3600000);
+}
+
+function deepPriority(item) {
+  const wait = deepWaitHours(item);
+  return (
+    (item.needs_sol_audit ? 2000 : 0) +
+    (item.target_price_trigger ? 1500 : 0) +
+    (item.price_drop_trigger ? 1000 : 0) +
+    Math.min(600, wait * 20) +
+    Math.max(0, Number(item.price_anomaly_pct || 0)) * 18 +
+    Number(item.discovery_score || 0) * 20
+  );
+}
+
+function adaptiveDeepLimit(state, available) {
+  if (!available.length) return 0;
+
+  // Soft cost guard: quality stays adaptive, but a surprisingly expensive day falls back toward 2.
+  const spentToday = Number(state.api_usage_today?.estimated_cost_usd || 0);
+  const maxByCost = spentToday >= 1.0 ? 2 : spentToday >= 0.6 ? 3 : 4;
+
+  const urgent = available.filter((x) =>
+    x.needs_sol_audit ||
+    x.target_price_trigger ||
+    x.price_drop_trigger ||
+    Number(x.discovery_score || 0) >= 8.8 ||
+    Number(x.price_anomaly_pct || 0) >= 12 ||
+    deepWaitHours(x) >= 24
+  ).length;
+
+  let limit = 2;
+  if (urgent >= 1 || available.length >= 8 || available.some((x) => deepWaitHours(x) >= 12)) limit = 3;
+  if (urgent >= 2 && (available.length >= 6 || available.some((x) => deepWaitHours(x) >= 24))) limit = 4;
+
+  return Math.min(limit, maxByCost, available.length);
+}
+
+function selectDeepBatch(state) {
+  const queue = ensureDeepQueue(state);
+  const now = Date.now();
+  const available = Object.values(queue)
+    .filter((x) => !x.deep_not_before || Date.parse(x.deep_not_before) <= now)
+    .sort((a, b) => deepPriority(b) - deepPriority(a));
+
+  const limit = adaptiveDeepLimit(state, available);
+  state.last_deep_limit = limit;
+  state.last_deep_queue_count = Object.keys(queue).length;
+  return available.slice(0, limit);
+}
+
+function settleDeepQueue(state, selected, successfulKeys, failedKeys, nowIso) {
+  const queue = ensureDeepQueue(state);
+  const success = new Set(successfulKeys || []);
+  const failed = new Set(failedKeys || []);
+
+  for (const candidate of selected || []) {
+    const key = candidate.candidate_key;
+    if (!key) continue;
+    if (success.has(key)) {
+      delete queue[key];
+      continue;
+    }
+    if (failed.has(key) && queue[key]) {
+      const attempts = Number(queue[key].deep_attempts || 0) + 1;
+      queue[key].deep_attempts = attempts;
+      queue[key].deep_not_before = new Date(
+        Date.parse(nowIso) + Math.min(24, 4 * attempts) * 3600000
+      ).toISOString();
+    }
+  }
+
+  state.last_deep_queue_count = Object.keys(queue).length;
+}
+
+function appendQualityStat(state, record) {
+  if (!Array.isArray(state.quality_history)) state.quality_history = [];
+  state.quality_history.push(record);
+  state.quality_history = state.quality_history.slice(-120);
+}
+
+function sourceWarningSignature(warnings) {
+  return crypto.createHash("sha1").update(JSON.stringify(warnings || [])).digest("hex").slice(0, 12);
 }
 
 function ensureVinCache(state) {
@@ -1199,29 +1392,29 @@ candidate_key должен остаться ровно: ${candidate.candidate_ke
 }
 
 async function deepAnalyzeCandidates(candidates, state) {
-  if (!candidates.length) return { analyses: [], failed: 0 };
+  if (!candidates.length) return { analyses: [], failed: 0, failed_keys: [] };
 
   const analyses = [];
-  let failed = 0;
+  const failedKeys = [];
 
   for (const candidate of candidates) {
     try {
       const cached = getVinCache(state, candidate);
       const result = await lunaAnalyzeOne(candidate, cached);
       if (result) analyses.push(result);
-      else failed += 1;
+      else failedKeys.push(candidate.candidate_key);
     } catch (error) {
-      failed += 1;
+      failedKeys.push(candidate.candidate_key);
       console.error("Luna analysis failed for " + candidate.candidate_key + ": " + String(error?.message || error));
     }
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
 
   if (candidates.length > 0 && analyses.length === 0) {
-    throw new Error("All selected Luna analyses failed (" + failed + "/" + candidates.length + ")");
+    throw new Error("All selected Luna analyses failed (" + failedKeys.length + "/" + candidates.length + ")");
   }
 
-  return { analyses, failed };
+  return { analyses, failed: failedKeys.length, failed_keys: failedKeys };
 }
 
 if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
@@ -1251,7 +1444,27 @@ try {
 
   state.last_collector_stats = direct.stats;
   state.last_collector_errors = (direct.errors || []).slice(0, 8);
-  state.telegram_high_water = direct.telegram_high_water || state.telegram_high_water || {};
+  state.telegram_cursors = direct.telegram_cursors || state.telegram_cursors || {};
+  if (direct.daily_sweep_performed) {
+    state.last_daily_sweep_day = direct.daily_sweep_day;
+    state.last_daily_sweep_at = nowIso;
+  }
+
+  const sourceWarnings = direct.source_health_warnings || [];
+  if (sourceWarnings.length) {
+    const sig = sourceWarningSignature(sourceWarnings);
+    const lastAt = Date.parse(state.last_source_warning_at || "") || 0;
+    if (state.last_source_warning_signature !== sig || Date.now() - lastAt > 12 * 3600000) {
+      await sendText(
+        chatId,
+        "⚠️ Car Gem Scout: источник работает подозрительно\n\n" +
+        sourceWarnings.map((x) => "• " + x).join("\n") +
+        "\n\nЯ не считаю такой проход доказательством, что на рынке нет ГЕМов."
+      );
+      state.last_source_warning_signature = sig;
+      state.last_source_warning_at = nowIso;
+    }
+  }
 
   updateSourceQueue(state, direct.pool || [], nowIso);
   const sourceBatch = selectSourceBatch(state, direct.price_changed_items || [], 32);
@@ -1265,41 +1478,20 @@ try {
 
   const discovery = await discoverCandidates(state, sourceBatch);
 
-  // Every card in sourceBatch was actually shown to Luna's cheap filter.
-  // Remove it from the pending queue only after that call succeeds.
+  // Every source card was genuinely seen by the cheap Luna filter.
   markSourceBatchProcessed(state, sourceBatch);
+  scheduleSecondChance(state, sourceBatch, discovery.candidates || [], nowIso);
 
-
-  const discovered = (discovery.candidates || [])
+  const discovered = enrichDiscoveryCandidates(discovery.candidates || [], sourceBatch)
     .filter((x) => x && (x.source_url || x.auto_ria_url || x.telegram_url))
     .map((x) => recordDiscoveredCandidate(state, x, nowIso));
 
   state.last_discovered_count = discovered.length;
 
-  const selected = discovered
-    .filter((x) => {
-      if (x.needs_sol_audit) return true;
-      if (x.never_analyzed) return true;
-      if (x.price_drop_trigger) return true;
-      if (x.target_price_trigger) return true;
-      return false;
-    })
-    .sort((a, b) => {
-      const ap =
-        (a.needs_sol_audit ? 1500 : 0) +
-        (a.target_price_trigger ? 1000 : 0) +
-        (a.price_drop_trigger ? 500 : 0) +
-        (a.never_analyzed ? 100 : 0) +
-        Number(a.discovery_score || 0);
-      const bp =
-        (b.needs_sol_audit ? 1500 : 0) +
-        (b.target_price_trigger ? 1000 : 0) +
-        (b.price_drop_trigger ? 500 : 0) +
-        (b.never_analyzed ? 100 : 0) +
-        Number(b.discovery_score || 0);
-      return bp - ap;
-    })
-    .slice(0, 2);
+  // Every candidate that passed the cheap filter waits here until it actually gets deep-analyzed.
+  enqueueDeepCandidates(state, discovered, nowIso);
+  const deepQueueBefore = Object.keys(ensureDeepQueue(state)).length;
+  const selected = selectDeepBatch(state);
 
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
@@ -1307,12 +1499,17 @@ try {
   const deep = await deepAnalyzeCandidates(selected, state);
   state.last_deep_failed_count = Number(deep.failed || 0);
 
+  const successfulDeepKeys = (deep.analyses || []).map((a) => a.candidate_key);
+  settleDeepQueue(state, selected, successfulDeepKeys, deep.failed_keys || [], nowIso);
+
   const lunaByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
   const watch = ensureMarketWatch(state);
   const almost = ensureAlmostGems(state);
   const alerts = [];
   let solAudits = 0;
   let solAuditFailures = 0;
+  let almostQualifiedThisRun = 0;
+  let gemsQualifiedThisRun = 0;
 
   for (const candidate of selected) {
     const luna = lunaByKey.get(candidate.candidate_key);
@@ -1373,6 +1570,7 @@ try {
       score < 8.5 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 26000
     ) {
+      almostQualifiedThisRun += 1;
       almost[candidate.candidate_key] = almostSnapshot(a, score, candidate, nowIso);
     } else {
       delete almost[candidate.candidate_key];
@@ -1388,6 +1586,7 @@ try {
     const mayRepeat = candidate.price_drop_trigger || candidate.target_price_trigger;
 
     if (qualifies) {
+      gemsQualifiedThisRun += 1;
       const top = ensureTopGems(state);
       top[candidate.candidate_key] = topGemSnapshot(
         a,
@@ -1415,6 +1614,29 @@ try {
   state.completed_runs = Number(state.completed_runs || 0) + 1;
   state.last_error = null;
   persistApiUsage(state);
+
+  appendQualityStat(state, {
+    at: nowIso,
+    source_pool_seen: Number(direct.pool?.length || 0),
+    source_batch_to_luna: sourceBatch.length,
+    discovery_selected: discovered.length,
+    discovery_rejected: Math.max(0, sourceBatch.length - discovered.length),
+    second_chance_scheduled: Number(state.last_second_chance_scheduled || 0),
+    deep_queue_before: deepQueueBefore,
+    deep_limit: Number(state.last_deep_limit || 0),
+    deep_selected: selected.length,
+    deep_success: Number((deep.analyses || []).length),
+    deep_failed: Number(deep.failed || 0),
+    deep_queue_after: Number(state.last_deep_queue_count || 0),
+    almost: almostQualifiedThisRun,
+    gems_qualified: gemsQualifiedThisRun,
+    alerts_new: alerts.length,
+    price_anomalies_in_batch: Number(state.last_price_anomaly_count || 0),
+    daily_sweep: Boolean(direct.daily_sweep_performed),
+    telegram_backfill_pending: Boolean(direct.stats?.telegram_backfill_pending),
+    source_health_warnings: Number(direct.source_health_warnings?.length || 0),
+    estimated_api_cost_usd: Number(runUsage.estimated_cost_usd || 0),
+  });
 
   if (!alerts.length) {
     state.last_check_status = "no_gem";
