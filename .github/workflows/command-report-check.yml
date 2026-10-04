@@ -1,0 +1,23 @@
+name: Command And Report Syntax Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/command-report-check.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check files
+        run: |
+          node --check scout.mjs
+          node --check sources.mjs
+          node --check api/telegram.js
