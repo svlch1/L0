@@ -1,11 +1,6 @@
 name: Car Gem Scout
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "scout.mjs"
   schedule:
     - cron: "0 */4 * * *"
   workflow_dispatch:
