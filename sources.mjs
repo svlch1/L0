@@ -121,8 +121,24 @@ function extractVin(text) {
   return vins[0] || "";
 }
 
-function extractYear(text) {
-  const years = [...String(text).matchAll(/\b(20(?:0[8-9]|1\d|2[0-6]))\b/g)]
+function yearFromVin(vin) {
+  const v = String(vin || "").toUpperCase().trim();
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(v)) return 0;
+  const map = {
+    A: 2010, B: 2011, C: 2012, D: 2013, E: 2014, F: 2015, G: 2016,
+    H: 2017, J: 2018, K: 2019, L: 2020, M: 2021, N: 2022,
+    P: 2023, R: 2024, S: 2025, T: 2026
+  };
+  return Number(map[v[9]] || 0);
+}
+
+function extractYear(text, vin = "") {
+  const vinYear = yearFromVin(vin);
+  if (vinYear) return vinYear;
+
+  // Avoid treating an AUTO.RIA update date such as 04.10.2026 as the vehicle year.
+  const cleaned = String(text).replace(/\b[0-3]?\d\.[01]?\d\.20\d{2}\b/g, " ");
+  const years = [...cleaned.matchAll(/\b(20(?:0[8-9]|1\d|2[0-6]))\b/g)]
     .map((m) => Number(m[1]));
   return years[0] || 0;
 }
@@ -395,6 +411,7 @@ function autoRiaCards(html, searchUrl, exploration = false) {
     const text = decodeHtml(html.slice(start, end)).slice(0, 2400);
     const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
+    const vin = extractVin(text);
 
     if (price && price > 27000) continue;
     if (mileage && mileage > 115000) continue;
@@ -404,10 +421,10 @@ function autoRiaCards(html, searchUrl, exploration = false) {
       source_url: url,
       auto_ria_url: url,
       telegram_url: "",
-      vin_hint: extractVin(text),
+      vin_hint: vin,
       price_hint_usd: price,
       mileage_hint_km: mileage,
-      year_hint: extractYear(text),
+      year_hint: extractYear(text, vin),
       model_hint: modelHint,
       published_at_hint: extractDate(text),
       market_median_hint_usd: 0,
@@ -433,6 +450,7 @@ function telegramPosts(html, channel) {
     const url = `https://t.me/${channel}/${id}`;
     const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
+    const vin = extractVin(text);
 
     if (!INTERESTING_BRANDS.test(text)) continue;
     if (!price || price > 27000) continue;
@@ -443,10 +461,10 @@ function telegramPosts(html, channel) {
       source_url: url,
       auto_ria_url: "",
       telegram_url: url,
-      vin_hint: extractVin(text),
+      vin_hint: vin,
       price_hint_usd: price,
       mileage_hint_km: mileage,
-      year_hint: extractYear(text),
+      year_hint: extractYear(text, vin),
       model_hint: "",
       published_at_hint: "",
       market_median_hint_usd: 0,
@@ -617,6 +635,12 @@ export async function collectDirectSources(state = {}) {
       daily_sweep_performed: Boolean(pages.daily_sweep),
       telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
       telegram_raw_posts_seen: telegramRawPosts,
+      telegram_channels: Object.fromEntries(tgResults.map((g) => [g.channel, {
+        pages_scanned: Number(g.pages_scanned || 0),
+        raw_posts_seen: Number(g.raw_posts_seen || 0),
+        matching_candidates: Number(g.items?.length || 0),
+        backfill_pending: Number(g.cursor?.backfill_before || 0) > 0
+      }])),
       telegram_backfill_pending: tgResults.some((g) => Number(g.cursor?.backfill_before || 0) > 0),
       source_errors: errors.length,
       source_health_warnings: sourceHealthWarnings.length,
