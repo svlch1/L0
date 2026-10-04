@@ -2,11 +2,6 @@ name: Car Gem Scout
 # sequential-production-validation
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/scout.yml"
   schedule:
     - cron: "0 */4 * * *"
   workflow_dispatch:
@@ -26,7 +21,7 @@ permissions:
 jobs:
   scout:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
