@@ -5,15 +5,6 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TEST_ONLY = process.env.TEST_ONLY === "true";
 
-function kyivHour() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Kyiv",
-    hour: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  return Number(parts.find((p) => p.type === "hour")?.value);
-}
-
 async function telegram(method, body) {
   const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
@@ -302,13 +293,6 @@ if (TEST_ONLY) {
 }
 
 if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
-
-const event = process.env.GITHUB_EVENT_NAME || "";
-const hour = kyivHour();
-if (event === "schedule" && hour !== 8 && hour !== 19) {
-  console.log(`Skip: Kyiv hour is ${hour}`);
-  process.exit(0);
-}
 
 const seen = loadSeen();
 const result = await research(seen);
