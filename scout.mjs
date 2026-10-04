@@ -612,12 +612,19 @@ function sourcePriority(item, nowMs = Date.now()) {
   const first = Date.parse(item.first_seen_at || "") || nowMs;
   const ageHours = Math.max(0, (nowMs - first) / 3600000);
   const anomaly = Number(item.price_anomaly_pct || 0);
-  const ageScore = Math.min(360, ageHours * 7.5);
-  const anomalyScore = anomaly >= 10 ? 250 + Math.min(250, anomaly * 10) : Math.max(0, anomaly * 4);
-  const telegramBonus = item.source === "KIEVAVTO" || item.source === "IsAuto" ? 35 : 0;
-  const explorationBonus = item.exploration ? 12 : 0;
-  const mileageBonus = Number(item.mileage_hint_km || 0) > 0 && Number(item.mileage_hint_km) <= 70000 ? 25 : 0;
-  return ageScore + anomalyScore + telegramBonus + explorationBonus + mileageBonus;
+  const mileage = Number(item.mileage_hint_km || 0);
+
+  const ageScore = Math.min(180, ageHours * 5);
+  const anomalyScore = Math.min(70, Math.max(0, anomaly) * 5);
+  const telegramBonus = item.source === "KIEVAVTO" || item.source === "IsAuto" ? 30 : 0;
+  const explorationBonus = item.exploration ? 10 : 0;
+  const mileageScore =
+    mileage > 0 && mileage <= 50000 ? 70 :
+    mileage > 0 && mileage <= 70000 ? 50 :
+    mileage > 0 && mileage <= 90000 ? 20 :
+    mileage > 105000 ? -45 : 0;
+
+  return ageScore + anomalyScore + telegramBonus + explorationBonus + mileageScore;
 }
 
 function selectSourceBatch(state, priceChangedItems = [], limit = 32) {
@@ -635,11 +642,47 @@ function selectSourceBatch(state, priceChangedItems = [], limit = 32) {
     .filter((x) => !x.not_before || Date.parse(x.not_before) <= now)
     .map((x) => ({
       ...x,
-      queue_age_hours: Math.round(Math.max(0, (Date.now() - (Date.parse(x.first_seen_at || "") || Date.now())) / 3600000) * 10) / 10,
-    }))
-    .sort((a, b) => sourcePriority(b) - sourcePriority(a));
+      queue_age_hours: Math.round(Math.max(0, (now - (Date.parse(x.first_seen_at || "") || now)) / 3600000) * 10) / 10,
+    }));
 
-  return [...changed, ...queued].slice(0, limit);
+  const picked = [];
+  const pickedUrls = new Set();
+
+  function add(items, max) {
+    let n = 0;
+    for (const item of items) {
+      if (picked.length >= limit || n >= max) break;
+      const url = sourceUrl(item);
+      if (!url || pickedUrls.has(url)) continue;
+      picked.push(item);
+      pickedUrls.add(url);
+      n += 1;
+    }
+  }
+
+  add(changed.sort((a,b) => Number(b.source_price_drop_pct || 0) - Number(a.source_price_drop_pct || 0)), 6);
+  add(
+    queued.filter(x => Number(x.mileage_hint_km || 0) > 0 && Number(x.mileage_hint_km) <= 70000)
+      .sort((a,b) => sourcePriority(b) - sourcePriority(a)),
+    10
+  );
+  add(
+    queued.filter(x => Number(x.price_anomaly_pct || 0) >= 8)
+      .sort((a,b) => Number(b.price_anomaly_pct || 0) - Number(a.price_anomaly_pct || 0)),
+    7
+  );
+  add(
+    queued.filter(x => x.source === "KIEVAVTO" || x.source === "IsAuto" || x.exploration)
+      .sort((a,b) => sourcePriority(b) - sourcePriority(a)),
+    5
+  );
+  add(
+    [...queued].sort((a,b) => Number(b.queue_age_hours || 0) - Number(a.queue_age_hours || 0)),
+    6
+  );
+  add([...queued].sort((a,b) => sourcePriority(b) - sourcePriority(a)), limit);
+
+  return picked.slice(0, limit);
 }
 
 function markSourceBatchProcessed(state, batch) {
