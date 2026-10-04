@@ -159,32 +159,6 @@ function statusText(state) {
   ].join("\n");
 }
 
-async function handleCommands(chatId, state) {
-  const offset = Number(state.telegram_update_offset || 0);
-  const updates = await telegram("getUpdates", {
-    offset: offset ? offset + 1 : undefined,
-    limit: 100,
-    timeout: 0,
-  });
-
-  let changed = false;
-  for (const update of updates) {
-    if (Number(update.update_id) > Number(state.telegram_update_offset || 0)) {
-      state.telegram_update_offset = update.update_id;
-      changed = true;
-    }
-
-    const msg = update.message;
-    if (!msg?.chat?.id || String(msg.chat.id) !== String(chatId)) continue;
-    const text = String(msg.text || "").trim().toLowerCase();
-    if (/^\/(start|status)(@\w+)?\b/.test(text)) {
-      await sendText(chatId, statusText(state));
-    }
-  }
-
-  if (changed) saveState(state);
-}
-
 function splitGems(text) {
   const parts = text
     .split(/(?=🔥\s*ГЕМ\s*\/\s*СМОТРЕТЬ\s*СРОЧНО)/i)
@@ -369,7 +343,6 @@ const runStartedAt = new Date().toISOString();
 const chatId = await getChatId();
 const state = loadSeen();
 
-await handleCommands(chatId, state);
 
 if (TEST_ONLY) {
   state.last_test_at = runStartedAt;
