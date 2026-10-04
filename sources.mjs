@@ -78,6 +78,7 @@ const TELEGRAM_FEEDS = [
   { channel: "karavan_auto_Dnepr", label: "Karavan Дніпро", url: "https://t.me/s/karavan_auto_Dnepr" },
   { channel: "hapai_avto", label: "Hapai Auto", url: "https://t.me/s/hapai_avto" },
   { channel: "griznes_auto", label: "Griznes Auto", url: "https://t.me/s/griznes_auto" },
+  { channel: "auto_residence_ua", label: "Авто Резіденс", url: "https://t.me/s/auto_residence_ua" },
 ];
 
 const INTERESTING_BRANDS = /\b(?:BMW|Mercedes(?:-Benz)?|Infiniti|Lexus|Audi|Genesis|Porsche|Jaguar|Cadillac|Acura|Volvo|Mustang|Camaro|Challenger|Maserati|Alfa\s+Romeo|Giulia|Stinger|370Z)\b/i;
