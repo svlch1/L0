@@ -216,7 +216,17 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
   const data = JSON.parse(raw);
   const text = outputText(data);
   if (!text) throw new Error("OpenAI returned empty structured output");
-  return JSON.parse(text);
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const incomplete = data.incomplete_details ? JSON.stringify(data.incomplete_details) : "none";
+    throw new Error(
+      "Structured JSON parse failed; response_status=" + String(data.status || "unknown") +
+      "; incomplete=" + incomplete +
+      "; chars=" + text.length +
+      "; tail=" + text.slice(-700)
+    );
+  }
 }
 
 const discoverySchema = {
@@ -556,7 +566,7 @@ async function discoverCandidates(state) {
 - пока НЕ отбрасывай умеренно битых американцев, если они потенциально могут быть хорошей покупкой — это проверит второй этап;
 - flood/fire/очевидный тяжёлый структурный хлам можешь не включать сразу.
 
-Найди максимум 20 реальных актуальных кандидатов. В source_url давай ПРЯМУЮ ссылку на конкретное объявление/пост.
+Найди максимум 15 реальных актуальных кандидатов. В source_url давай ПРЯМУЮ ссылку на конкретное объявление/пост.
 Не выдумывай VIN, цену, пробег или URL. Если VIN не найден — пустая строка, если число неизвестно — 0.
 
 PRICE WATCH:
@@ -571,18 +581,22 @@ ${JSON.stringify(watchlist)}
     schema: discoverySchema,
     name: "car_candidate_discovery",
     effort: "medium",
-    maxOutputTokens: 5000,
+    maxOutputTokens: 9000,
   });
 }
 
 async function deepAnalyzeCandidates(candidates, state) {
   if (!candidates.length) return { analyses: [] };
 
-  const prompt = `
+  const analyses = [];
+
+  for (let i = 0; i < candidates.length; i += 4) {
+    const batch = candidates.slice(i, i + 4);
+    const prompt = `
 Ты — DEEP ANALYSIS-этап Car Gem Scout. Ниже уже собранные реальные объявления. Теперь глубоко проверь КАЖДОГО кандидата и верни структурированный анализ.
 
 КАНДИДАТЫ:
-${JSON.stringify(candidates)}
+${JSON.stringify(batch)}
 
 МОЙ ПРОФИЛЬ ПОКУПКИ:
 - первая машина в Украине;
@@ -638,13 +652,18 @@ TARGET PRICE:
 candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входного кандидата.
 `;
 
-  return openaiJson({
-    prompt,
-    schema: analysisSchema,
-    name: "car_deep_analysis",
-    effort: "high",
-    maxOutputTokens: 10000,
-  });
+    const result = await openaiJson({
+      prompt,
+      schema: analysisSchema,
+      name: "car_deep_analysis",
+      effort: "high",
+      maxOutputTokens: 9000,
+    });
+
+    analyses.push(...(result.analyses || []));
+  }
+
+  return { analyses };
 }
 
 if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
@@ -689,7 +708,7 @@ try {
       const bp = (b.target_price_trigger ? 100 : 0) + (b.price_drop_trigger ? 50 : 0) + (b.never_analyzed ? 10 : 0);
       return bp - ap;
     })
-    .slice(0, 12);
+    .slice(0, 8);
 
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
