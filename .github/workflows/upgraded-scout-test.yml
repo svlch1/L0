@@ -37,3 +37,5 @@ jobs:
           git add seen.json
           git commit -m "Update Car Gem Scout state"
           git push
+
+# rerun 2
