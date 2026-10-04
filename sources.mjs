@@ -70,8 +70,12 @@ function dailySweepDue(state) {
 }
 
 const TELEGRAM_FEEDS = [
-  { channel: "kievavto2", url: "https://t.me/s/kievavto2" },
-  { channel: "isAuto99", url: "https://t.me/s/isAuto99" },
+  { channel: "kievavto2", label: "KIEVAVTO", url: "https://t.me/s/kievavto2" },
+  { channel: "isAuto99", label: "IsAuto", url: "https://t.me/s/isAuto99" },
+  { channel: "imperiya_auto", label: "Imperiya", url: "https://t.me/s/imperiya_auto" },
+  { channel: "grand_the_auto_13", label: "Grand Auto", url: "https://t.me/s/grand_the_auto_13" },
+  { channel: "autobazarkyiv1", label: "Автобазар Київ", url: "https://t.me/s/autobazarkyiv1" },
+  { channel: "griznes_auto", label: "Griznes Auto", url: "https://t.me/s/griznes_auto" },
 ];
 
 const INTERESTING_BRANDS = /\b(?:BMW|Mercedes(?:-Benz)?|Infiniti|Lexus|Audi|Genesis|Porsche|Jaguar|Cadillac|Acura|Volvo|Mustang|Camaro|Challenger|Maserati|Alfa\s+Romeo|Giulia|Stinger|370Z)\b/i;
@@ -110,6 +114,23 @@ function extractPriceUsd(text) {
   return values[0] || 0;
 }
 
+function extractTelegramPriceUsd(text) {
+  const s = String(text);
+  const values = [];
+
+  for (const m of s.matchAll(/(?:\$\s*)?(\d{1,3}(?:[ .,]\d{3})+|\d{4,6})\s*\$/g)) {
+    const n = Number(m[1].replace(/[ .,]/g, ""));
+    if (n >= 3000 && n <= 300000) values.push(n);
+  }
+
+  for (const m of s.matchAll(/(?:нова\s+ціна|новая\s+цена|ціна\s+для\s+підписників|цена\s+для\s+подписчиков|ціна|цена)\s*[:\-–—]?\s*\$?\s*(\d{1,3}(?:[ .,]\d{3})+|\d{4,6})\s*\$?/gi)) {
+    const n = Number(m[1].replace(/[ .,]/g, ""));
+    if (n >= 3000 && n <= 300000) values.push(n);
+  }
+
+  return values.length ? Math.min(...values) : 0;
+}
+
 function extractMileageKm(text) {
   const s = String(text);
 
@@ -124,6 +145,13 @@ function extractMileageKm(text) {
     const n = Number(m[1].replace(/ /g, ""));
     if (n >= 1000) return n;
   }
+
+  m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис|тыс|т\.?\s*м\.?)\s*(?:миль|mile|miles)?/i);
+  if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000 * 1.60934);
+
+  m = s.match(/(\d{4,6})\s*(?:миль|mile|miles)\b/i);
+  if (m) return Math.round(Number(m[1]) * 1.60934);
+
   return 0;
 }
 
@@ -464,7 +492,7 @@ function autoRiaCards(html, searchUrl, exploration = false) {
     const start = Math.max(0, m.index - 1800);
     const end = Math.min(html.length, m.index + 5200);
     const text = decodeHtml(html.slice(start, end)).slice(0, 2400);
-    const price = extractPriceUsd(text);
+    const price = extractTelegramPriceUsd(text);
     const mileage = extractMileageKm(text);
     const vin = extractVin(text);
 
@@ -493,7 +521,7 @@ function autoRiaCards(html, searchUrl, exploration = false) {
   return out;
 }
 
-function telegramPosts(html, channel) {
+function telegramPosts(html, channel, label) {
   const out = [];
   const wrappers = String(html).split(/<div class=["'][^"']*tgme_widget_message_wrap[^"']*["']/i).slice(1);
   const debug = { wrappers: wrappers.length, ids: 0, texts: 0, brands: 0, prices: 0, mileage_rejects: 0, accepted: 0 };
@@ -525,7 +553,7 @@ function telegramPosts(html, channel) {
 
     debug.accepted += 1;
     out.push({
-      source: channel.toLowerCase() === "kievavto2" ? "KIEVAVTO" : "IsAuto",
+      source: label || channel,
       source_url: url,
       auto_ria_url: "",
       telegram_url: url,
@@ -605,7 +633,7 @@ export async function collectDirectSources(state = {}) {
   const oldCursors = state?.telegram_cursors || {};
   const legacyHighWater = state?.telegram_high_water || {};
   const tgResults = await Promise.all(
-    TELEGRAM_FEEDS.map(async ({ channel, url }) => {
+    TELEGRAM_FEEDS.map(async ({ channel, label, url }) => {
       const cursor = oldCursors[channel] || {
         high_water: Number(legacyHighWater[channel] || 0),
         pending_high_water: 0,
@@ -617,7 +645,7 @@ export async function collectDirectSources(state = {}) {
 
       for (const html of fetched.pages) {
         rawPosts += telegramPostIds(html, channel).length;
-        for (const item of telegramPosts(html, channel)) {
+        for (const item of telegramPosts(html, channel, label)) {
           const key = normalizeUrl(item.source_url);
           if (!byUrl.has(key)) byUrl.set(key, item);
         }
@@ -625,6 +653,7 @@ export async function collectDirectSources(state = {}) {
 
       return {
         channel,
+        label,
         items: [...byUrl.values()],
         pages_scanned: fetched.pages.length,
         raw_posts_seen: rawPosts,
@@ -647,7 +676,7 @@ export async function collectDirectSources(state = {}) {
     const watchedItem = watched.get(url);
     const forceTelegramReview =
       TELEGRAM_FORCE_RECENT_POSTS > 0 &&
-      (item.source === "KIEVAVTO" || item.source === "IsAuto");
+      item.source !== "AUTO.RIA";
 
     if (!seen.has(url) || forceTelegramReview) {
       pool.push(forceTelegramReview ? { ...item, forced_recent_review: true } : item);
@@ -712,6 +741,7 @@ export async function collectDirectSources(state = {}) {
       telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
       telegram_raw_posts_seen: telegramRawPosts,
       telegram_channels: Object.fromEntries(tgResults.map((g) => [g.channel, {
+        label: g.label || g.channel,
         pages_scanned: Number(g.pages_scanned || 0),
         raw_posts_seen: Number(g.raw_posts_seen || 0),
         matching_candidates: Number(g.items?.length || 0),
