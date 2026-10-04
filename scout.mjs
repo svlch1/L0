@@ -142,8 +142,6 @@ function statusText(state) {
     result = `найдено и показано: ${state.last_sent_count || 0}`;
   } else if (state.last_check_status === "error") {
     result = `ошибка: ${state.last_error || "неизвестная"}`;
-  } else if (state.last_check_status === "test") {
-    result = "тест Telegram прошёл успешно";
   }
 
   return [
@@ -374,10 +372,7 @@ const state = loadSeen();
 await handleCommands(chatId, state);
 
 if (TEST_ONLY) {
-  state.last_check_at = runStartedAt;
-  state.last_check_status = "test";
-  state.last_error = null;
-  state.completed_runs = Number(state.completed_runs || 0) + 1;
+  state.last_test_at = runStartedAt;
   saveState(state);
   await sendText(chatId,
     "✅ Car Gem Scout подключён.\n\n" +
