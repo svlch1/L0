@@ -621,18 +621,12 @@ ${JSON.stringify(watchlist)}
   });
 }
 
-async function deepAnalyzeCandidates(candidates, state) {
-  if (!candidates.length) return { analyses: [] };
+async function deepAnalyzeOne(candidate) {
+  const prompt = `
+Ты — DEEP ANALYSIS-этап Car Gem Scout. Ниже уже собранное реальное объявление. Теперь глубоко проверь ЭТОГО кандидата и верни структурированный анализ.
 
-  const analyses = [];
-
-  for (let i = 0; i < candidates.length; i += 2) {
-    const batch = candidates.slice(i, i + 2);
-    const prompt = `
-Ты — DEEP ANALYSIS-этап Car Gem Scout. Ниже уже собранные реальные объявления. Теперь глубоко проверь КАЖДОГО кандидата и верни структурированный анализ.
-
-КАНДИДАТЫ:
-${JSON.stringify(batch)}
+КАНДИДАТ:
+${JSON.stringify(candidate)}
 
 МОЙ ПРОФИЛЬ ПОКУПКИ:
 - первая машина в Украине;
@@ -688,16 +682,29 @@ TARGET PRICE:
 candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входного кандидата.
 `;
 
-    const result = await openaiJson({
-      prompt,
-      schema: analysisSchema,
-      name: "car_deep_analysis",
-      effort: "high",
-      maxOutputTokens: 9000,
-      background: true,
-    });
+  const result = await openaiJson({
+    prompt,
+    schema: analysisSchema,
+    name: "car_deep_analysis",
+    effort: "high",
+    maxOutputTokens: 12000,
+    background: true,
+  });
 
-    analyses.push(...(result.analyses || []));
+  return (result.analyses || [])[0] || null;
+}
+
+async function deepAnalyzeCandidates(candidates, state) {
+  if (!candidates.length) return { analyses: [] };
+
+  const analyses = [];
+
+  // One car per response prevents structured output truncation.
+  // Run two in parallel to keep the full scout within the GitHub Actions window.
+  for (let i = 0; i < candidates.length; i += 2) {
+    const pair = candidates.slice(i, i + 2);
+    const results = await Promise.all(pair.map((candidate) => deepAnalyzeOne(candidate)));
+    analyses.push(...results.filter(Boolean));
   }
 
   return { analyses };
