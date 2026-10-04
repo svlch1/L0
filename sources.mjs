@@ -87,6 +87,8 @@ function decodeHtml(s) {
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(Number(num)))
     .replace(/\s*\n\s*/g, "\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
