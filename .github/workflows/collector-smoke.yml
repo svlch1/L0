@@ -1,0 +1,37 @@
+name: Collector Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/collector-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test direct collectors only
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { collectDirectSources } from "./sources.mjs";
+          const state = JSON.parse(fs.readFileSync("seen.json", "utf8"));
+          const r = await collectDirectSources(state);
+          console.log("STATS", JSON.stringify(r.stats));
+          console.log("ERRORS", JSON.stringify(r.errors));
+          console.log("SAMPLES", JSON.stringify(r.items.slice(0, 10).map(x => ({
+            source: x.source,
+            url: x.source_url,
+            price: x.price_hint_usd,
+            mileage: x.mileage_hint_km,
+            vin: x.vin_hint
+          }))));
+          if (!r.items.length) process.exit(2);
+          NODE
