@@ -17,6 +17,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: car-gem-state
+  cancel-in-progress: false
+
 jobs:
   scout:
     runs-on: ubuntu-latest
