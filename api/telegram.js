@@ -189,6 +189,21 @@ function topText(state) {
   ].join("\n\n").slice(0, 4000);
 }
 
+function telegramCoverageText(stats) {
+  const channels = stats?.telegram_channels || {};
+  const parts = Object.values(channels)
+    .map((x) => ({
+      label: String(x.label || "").trim(),
+      posts: Number(x.raw_posts_seen || 0),
+    }))
+    .filter((x) => x.label);
+
+  if (!parts.length) return "Telegram: данных пока нет";
+  const total = parts.reduce((sum,x) => sum + x.posts, 0);
+  return `Telegram: ${parts.length} каналов / ${total} постов · ` +
+    parts.map((x) => `${x.label} ${x.posts}`).join(" · ");
+}
+
 function statusText(state) {
   let result = "ещё не было проверки";
   if (state.last_check_status === "no_gem") result = "ГЕМов не найдено";
@@ -203,9 +218,7 @@ function statusText(state) {
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
   const interestingCount = Object.keys(state.interesting_by_key || {}).length;
-  const tg = state.last_collector_stats?.telegram_channels || {};
-  const kievPosts = Number(tg.kievavto2?.raw_posts_seen || 0);
-  const isAutoPosts = Number(tg.isAuto99?.raw_posts_seen || 0);
+  const tgLine = telegramCoverageText(state.last_collector_stats || {});
   const deepQueue = Number(state.last_deep_queue_count || 0);
   const lastQuality = Array.isArray(state.quality_history) && state.quality_history.length
     ? state.quality_history[state.quality_history.length - 1]
@@ -228,7 +241,7 @@ function statusText(state) {
     `🔥 Всего отправлено ГЕМов: ${state.total_gems_sent || 0}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
-    `📲 Telegram просмотрено: KIEVAVTO ${kievPosts} постов · IsAuto ${isAutoPosts} постов`,
+    `📲 ${tgLine}`,
     usage ? `💸 Последний проход: ~${usd(usage.estimated_cost_usd)}` : "💸 Стоимость появится после следующего прохода",
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
     `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
