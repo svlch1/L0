@@ -545,6 +545,100 @@ const analysisSchema = {
   additionalProperties: false
 };
 
+const analystSchema = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    working_well: { type: "array", items: { type: "string" } },
+    problems: { type: "array", items: { type: "string" } },
+    actions: { type: "array", items: { type: "string" } },
+    watch_next_day: { type: "array", items: { type: "string" } },
+    cost_note: { type: "string" }
+  },
+  required: ["summary","working_well","problems","actions","watch_next_day","cost_note"],
+  additionalProperties: false
+};
+
+function analystMessage(a) {
+  const bullets = (arr, prefix) => (arr || []).slice(0,4).map((x) => prefix + " " + String(x).replace(/\s+/g," ").trim());
+  return [
+    "🧠 Ежедневный аналитик Car Gem Scout",
+    "",
+    String(a.summary || "").trim(),
+    "",
+    "✅ Что работает",
+    ...bullets(a.working_well, "•"),
+    "",
+    "⚠️ Где вижу проблему",
+    ...bullets(a.problems, "•"),
+    "",
+    "🔧 Что бы я улучшил",
+    ...bullets(a.actions, "•"),
+    "",
+    "👀 На что смотреть следующие сутки",
+    ...bullets(a.watch_next_day, "•"),
+    "",
+    "💸 " + String(a.cost_note || "").trim(),
+  ].filter((x) => x !== "").join("\n").slice(0,3900);
+}
+
+async function runDailyAnalyst(state, chatId) {
+  const recent = Array.isArray(state.quality_history) ? state.quality_history.slice(-12) : [];
+  const payload = {
+    recent_runs: recent,
+    last_collector: state.last_collector_stats || {},
+    last_api_usage: state.last_api_usage || {},
+    api_today: state.api_usage_today || {},
+    source_queue: Object.keys(state.source_queue || {}).length,
+    deep_queue: Object.keys(state.deep_queue || {}).length,
+    almost_count: Object.keys(state.almost_gems_by_key || {}).length,
+    interesting_count: Object.keys(state.interesting_by_key || {}).length,
+    gems_total: Number(state.total_gems_sent || 0),
+    last_error: state.last_error || null,
+    current_rules: {
+      gem: ">=8.5 and confidence>=70",
+      almost: "7.8-8.49",
+      deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
+      sources: "AUTO.RIA + KIEVAVTO + IsAuto",
+      schedule: "every 4 hours"
+    }
+  };
+
+  const prompt = `
+Ты — внутренний аналитик качества Car Gem Scout.
+Раз в сутки ты смотришь на техническую статистику работы бота и пишешь владельцу КОРОТКИЙ практический отчёт на русском.
+
+ЦЕЛЬ:
+- понять, не пропускаем ли хорошие машины;
+- не тратим ли API на слабые кандидаты;
+- найти повторяющиеся ошибки/узкие места;
+- предложить 1–4 конкретных улучшения;
+- НЕ предлагать изменения ради изменений;
+- НЕ менять код самостоятельно;
+- если данных пока мало, прямо скажи это;
+- отдельно следи за отношением discovery -> deep -> almost/gem, ошибками deep, очередями, Telegram/AUTO.RIA coverage и стоимостью.
+
+ДАННЫЕ:
+${JSON.stringify(payload)}
+`;
+
+  const result = await openaiJson({
+    prompt,
+    schema: analystSchema,
+    name: "daily_scout_analyst",
+    model: LUNA_MODEL,
+    effort: "low",
+    maxOutputTokens: 2200,
+    useWebSearch: false,
+  });
+
+  state.last_daily_analyst_at = new Date().toISOString();
+  state.last_daily_analyst = result;
+  persistApiUsage(state);
+  saveState(state);
+  await sendText(chatId, analystMessage(result));
+}
+
 function normalizeUrl(url) {
   return String(url || "").trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
 }
@@ -1583,6 +1677,12 @@ const runStartedAt = new Date().toISOString();
 const chatId = await getChatId();
 const state = loadSeen();
 
+
+if (ANALYST_ONLY) {
+  if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
+  await runDailyAnalyst(state, chatId);
+  process.exit(0);
+}
 
 if (TEST_ONLY) {
   state.last_test_at = runStartedAt;
