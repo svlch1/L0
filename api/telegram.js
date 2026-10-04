@@ -31,6 +31,17 @@ async function loadState() {
   }
 }
 
+function compactTokens(n) {
+  n = Number(n || 0);
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  return String(n);
+}
+
+function usd(n) {
+  return "$" + Number(n || 0).toFixed(3);
+}
+
 function statusText(state) {
   let result = "ещё нет завершённых проверок";
 
@@ -43,6 +54,10 @@ function statusText(state) {
   }
 
   const healthy = state.last_check_status !== "error";
+  const usage = state.last_api_usage || null;
+  const today = state.api_usage_today || null;
+  const lunaCalls = Number(usage?.by_model?.["gpt-6-luna"]?.calls || 0);
+  const solCalls = Number(usage?.by_model?.["gpt-6.1-sol"]?.calls || 0);
 
   return [
     healthy ? "🟢 Car Gem Scout работает" : "🔴 Car Gem Scout: есть ошибка",
@@ -51,15 +66,19 @@ function statusText(state) {
     `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
     `🔎 Результат: ${result}`,
     `🧲 Кандидатов в последнем discovery: ${state.last_discovered_count || 0}`,
-    `🔬 Глубоко проверено в последнем проходе: ${state.last_deep_analyzed_count || 0}`,
+    `🔬 Luna deep-analysis: ${state.last_deep_analyzed_count || 0}`,
+    `🧠 Sol final audit: ${state.last_sol_audits || 0}`,
     `👀 Машин под price-watch: ${Object.keys(state.market_watch || {}).length}`,
     `📊 Всего показано гемов: ${state.total_gems_sent || 0}`,
+    usage ? `💸 API последний проход: ~${usd(usage.estimated_cost_usd)} (Luna ${lunaCalls} / Sol ${solCalls})` : "💸 API последний проход: учёт включится со следующего прохода",
+    usage ? `🪙 Tokens: in ${compactTokens(usage.input_tokens)} / out ${compactTokens(usage.output_tokens)} / web ${usage.web_search_calls || 0}` : null,
+    today ? `📅 API сегодня (учтено ботом): ~${usd(today.estimated_cost_usd)}` : null,
     `🔁 Завершённых проходов: ${state.completed_runs || 0}`,
     `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
     "Источники: AUTO.RIA + KIEVAVTO + IsAuto",
     "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export default async function handler(req, res) {
