@@ -5,6 +5,8 @@ import { collectDirectSources, commitObservedUrls } from "./sources.mjs";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TEST_ONLY = process.env.TEST_ONLY === "true";
+const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
+const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
 
 const LUNA_MODEL = "gpt-6-luna";
 const SOL_MODEL = "gpt-6.1-sol";
@@ -852,26 +854,6 @@ function deepPriority(item) {
   );
 }
 
-function adaptiveDeepLimit(state, available) {
-  if (!available.length) return 0;
-
-  const spentToday = Number(state.api_usage_today?.estimated_cost_usd || 0);
-  const maxByCost = spentToday >= 0.6 ? 2 : spentToday >= 0.35 ? 3 : 4;
-
-  const veryStrong = available.filter((x) =>
-    x.needs_sol_audit ||
-    x.target_price_trigger ||
-    Number(x.previous_score || 0) >= 8.0 ||
-    Number(x.discovery_score || 0) >= 8.3
-  ).length;
-
-  let limit = Math.min(2, available.length);
-  if (veryStrong >= 3) limit = 3;
-  if (veryStrong >= 4 && available.some((x) => Number(x.discovery_score || 0) >= 8.7 || x.needs_sol_audit)) limit = 4;
-
-  return Math.min(limit, maxByCost, available.length);
-}
-
 function selectDeepBatch(state) {
   const queue = ensureDeepQueue(state);
   const now = Date.now();
@@ -884,10 +866,37 @@ function selectDeepBatch(state) {
     .filter((x) => !x.deep_not_before || Date.parse(x.deep_not_before) <= now)
     .sort((a, b) => deepPriority(b) - deepPriority(a));
 
-  const limit = adaptiveDeepLimit(state, available);
-  state.last_deep_limit = limit;
+  // Все реально сильные preliminary-кандидаты идут в deep сразу.
+  // Жёсткий потолок — 6 машин за один проход, чтобы стоимость оставалась контролируемой.
+  const strong = available.filter((x) =>
+    x.needs_sol_audit ||
+    x.target_price_trigger ||
+    (x.price_drop_trigger && Number(x.previous_score || 0) >= 7.5) ||
+    Number(x.discovery_score || 0) >= 8.0
+  );
+
+  const selected = [];
+  const used = new Set();
+
+  for (const item of strong) {
+    if (selected.length >= 6) break;
+    selected.push(item);
+    used.add(item.candidate_key);
+  }
+
+  // Если сильных мало, добираем максимум до двух лучшими из очереди 7.7–7.99.
+  if (selected.length < 2) {
+    for (const item of available) {
+      if (selected.length >= 2) break;
+      if (used.has(item.candidate_key)) continue;
+      selected.push(item);
+      used.add(item.candidate_key);
+    }
+  }
+
+  state.last_deep_limit = selected.length;
   state.last_deep_queue_count = Object.keys(queue).length;
-  return available.slice(0, limit);
+  return selected;
 }
 
 function settleDeepQueue(state, selected, successfulKeys, failedKeys, nowIso) {
@@ -1556,7 +1565,7 @@ try {
   }
 
   updateSourceQueue(state, direct.pool || [], nowIso);
-  const sourceBatch = selectSourceBatch(state, direct.price_changed_items || [], 32);
+  const sourceBatch = selectSourceBatch(state, direct.price_changed_items || [], SOURCE_BATCH_LIMIT);
   state.last_source_queue_count = Object.keys(ensureSourceQueue(state)).length;
   state.last_price_anomaly_count = sourceBatch.filter((x) => Number(x.price_anomaly_pct || 0) >= 10).length;
   state.last_exploration_brands = direct.exploration_brands || [];
