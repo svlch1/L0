@@ -6,6 +6,141 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TEST_ONLY = process.env.TEST_ONLY === "true";
 
+const LUNA_MODEL = "gpt-6-luna";
+const SOL_MODEL = "gpt-6.1-sol";
+const WEB_SEARCH_CALL_USD = 0.01;
+
+const MODEL_RATES = {
+  [LUNA_MODEL]: { input: 0.10, cached: 0.01, cache_write: 0.125, output: 0.50 },
+  [SOL_MODEL]: { input: 2.00, cached: 0.20, cache_write: 2.50, output: 10.00 },
+};
+
+const runUsage = {
+  input_tokens: 0,
+  cached_input_tokens: 0,
+  cache_write_tokens: 0,
+  output_tokens: 0,
+  reasoning_tokens: 0,
+  web_search_calls: 0,
+  estimated_cost_usd: 0,
+  calls: 0,
+  by_model: {},
+};
+
+function roundUsd(n) {
+  return Math.round(Number(n || 0) * 10000) / 10000;
+}
+
+function countWebSearchCalls(data) {
+  return (data?.output || []).filter((x) => x?.type === "web_search_call").length;
+}
+
+function recordApiUsage(data, model) {
+  const usage = data?.usage || {};
+  const input = Number(usage.input_tokens || 0);
+  const cached = Number(usage.input_tokens_details?.cached_tokens || 0);
+  const cacheWrite = Number(usage.input_tokens_details?.cache_write_tokens || 0);
+  const output = Number(usage.output_tokens || 0);
+  const reasoning = Number(usage.output_tokens_details?.reasoning_tokens || 0);
+  const webCalls = countWebSearchCalls(data);
+  const rates = MODEL_RATES[model] || MODEL_RATES[SOL_MODEL];
+
+  const ordinaryInput = Math.max(0, input - cached - cacheWrite);
+  const cost =
+    ordinaryInput / 1_000_000 * rates.input +
+    cached / 1_000_000 * rates.cached +
+    cacheWrite / 1_000_000 * rates.cache_write +
+    output / 1_000_000 * rates.output +
+    webCalls * WEB_SEARCH_CALL_USD;
+
+  runUsage.input_tokens += input;
+  runUsage.cached_input_tokens += cached;
+  runUsage.cache_write_tokens += cacheWrite;
+  runUsage.output_tokens += output;
+  runUsage.reasoning_tokens += reasoning;
+  runUsage.web_search_calls += webCalls;
+  runUsage.calls += 1;
+  runUsage.estimated_cost_usd += cost;
+
+  if (!runUsage.by_model[model]) {
+    runUsage.by_model[model] = {
+      calls: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      reasoning_tokens: 0,
+      web_search_calls: 0,
+      estimated_cost_usd: 0,
+    };
+  }
+  const m = runUsage.by_model[model];
+  m.calls += 1;
+  m.input_tokens += input;
+  m.output_tokens += output;
+  m.reasoning_tokens += reasoning;
+  m.web_search_calls += webCalls;
+  m.estimated_cost_usd = roundUsd(m.estimated_cost_usd + cost);
+
+  runUsage.estimated_cost_usd = roundUsd(runUsage.estimated_cost_usd);
+}
+
+function kyivDay(iso = new Date().toISOString()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(iso));
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+function persistApiUsage(state) {
+  state.last_api_usage = JSON.parse(JSON.stringify(runUsage));
+
+  const day = kyivDay();
+  if (!state.api_usage_today || state.api_usage_today.date !== day) {
+    state.api_usage_today = {
+      date: day,
+      input_tokens: 0,
+      output_tokens: 0,
+      reasoning_tokens: 0,
+      web_search_calls: 0,
+      calls: 0,
+      estimated_cost_usd: 0,
+      by_model: {},
+    };
+  }
+
+  const t = state.api_usage_today;
+  t.input_tokens += runUsage.input_tokens;
+  t.output_tokens += runUsage.output_tokens;
+  t.reasoning_tokens += runUsage.reasoning_tokens;
+  t.web_search_calls += runUsage.web_search_calls;
+  t.calls += runUsage.calls;
+  t.estimated_cost_usd = roundUsd(t.estimated_cost_usd + runUsage.estimated_cost_usd);
+
+  for (const [model, u] of Object.entries(runUsage.by_model)) {
+    if (!t.by_model[model]) {
+      t.by_model[model] = {
+        calls: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        reasoning_tokens: 0,
+        web_search_calls: 0,
+        estimated_cost_usd: 0,
+      };
+    }
+    const d = t.by_model[model];
+    d.calls += u.calls;
+    d.input_tokens += u.input_tokens;
+    d.output_tokens += u.output_tokens;
+    d.reasoning_tokens += u.reasoning_tokens;
+    d.web_search_calls += u.web_search_calls;
+    d.estimated_cost_usd = roundUsd(d.estimated_cost_usd + u.estimated_cost_usd);
+  }
+}
+
+
 async function telegram(method, body) {
   const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
@@ -179,9 +314,20 @@ function outputText(data) {
     .trim();
 }
 
-async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTokens = 5000, background = false, useWebSearch = true }) {
+async function openaiJson({
+  prompt,
+  schema,
+  name,
+  model = LUNA_MODEL,
+  effort = "low",
+  maxOutputTokens = 3500,
+  background = false,
+  useWebSearch = true,
+  searchContextSize = "medium",
+  maxToolCalls = 3,
+}) {
   const payload = {
-    model: "gpt-6.1-sol",
+    model,
     reasoning: { effort },
     input: prompt,
     text: {
@@ -199,13 +345,14 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
   if (useWebSearch) {
     payload.tools = [{
       type: "web_search",
-      search_context_size: "high",
+      search_context_size: searchContextSize,
       user_location: {
         type: "approximate",
         country: "UA",
         timezone: "Europe/Kyiv"
       }
     }];
+    payload.max_tool_calls = maxToolCalls;
   }
 
   if (background) payload.background = true;
@@ -227,20 +374,10 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
     if (!data.id) throw new Error("Background response did not return an id");
 
     const deadline = Date.now() + 15 * 60 * 1000;
-    let pollCount = 0;
-    let lastLoggedStatus = "";
     while ((data.status === "queued" || data.status === "in_progress") && Date.now() < deadline) {
-      if (data.status !== lastLoggedStatus || pollCount % 6 === 0) {
-        console.log(`OpenAI background response ${data.id}: ${data.status}`);
-        lastLoggedStatus = data.status;
-      }
-      pollCount += 1;
       await new Promise((resolve) => setTimeout(resolve, 10000));
-
       const poll = await fetch("https://api.openai.com/v1/responses/" + encodeURIComponent(data.id), {
-        headers: {
-          authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
+        headers: { authorization: `Bearer ${OPENAI_API_KEY}` },
       });
       const pollRaw = await poll.text();
       if (!poll.ok) {
@@ -252,12 +389,15 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
     if (data.status === "queued" || data.status === "in_progress") {
       throw new Error("OpenAI background response timed out after 15 minutes");
     }
-    if (data.status !== "completed") {
-      throw new Error(
-        "OpenAI background response ended with status=" + String(data.status || "unknown") +
-        "; error=" + JSON.stringify(data.error || data.incomplete_details || null)
-      );
-    }
+  }
+
+  recordApiUsage(data, model);
+
+  if (data.status && data.status !== "completed") {
+    throw new Error(
+      "OpenAI response ended with status=" + String(data.status) +
+      "; details=" + JSON.stringify(data.error || data.incomplete_details || null)
+    );
   }
 
   const text = outputText(data);
@@ -493,6 +633,7 @@ function recordDiscoveredCandidate(state, candidate, nowIso) {
     previously_alerted: Boolean(prev.alerted),
     previous_score: Number(prev.last_score || 0),
     previous_target_buy_price_usd: Number(prev.target_buy_price_usd || 0),
+    needs_sol_audit: Boolean(prev.needs_sol_audit),
   };
 }
 
@@ -637,8 +778,9 @@ ${JSON.stringify(watchlist)}
       prompt,
       schema: discoverySchema,
       name: "car_candidate_discovery",
+      model: LUNA_MODEL,
       effort: "low",
-      maxOutputTokens: 5000,
+      maxOutputTokens: 3000,
       useWebSearch: false,
     });
   }
@@ -669,106 +811,123 @@ ${JSON.stringify(watchlist)}
     prompt,
     schema: discoverySchema,
     name: "car_candidate_discovery_fallback",
+    model: LUNA_MODEL,
     effort: "low",
-    maxOutputTokens: 5000,
+    maxOutputTokens: 3200,
     useWebSearch: true,
+    searchContextSize: "low",
+    maxToolCalls: 2,
   });
 }
 
-async function deepAnalyzeOne(candidate) {
+async function lunaAnalyzeOne(candidate) {
   const prompt = `
-Ты — DEEP ANALYSIS-этап Car Gem Scout. Ниже уже собранное реальное объявление. Теперь глубоко проверь ЭТОГО кандидата и верни структурированный анализ.
+Ты — экономный, но тщательный DEEP ANALYSIS-этап Car Gem Scout.
+Проверь конкретную машину. Используй web search только для вещей, реально влияющих на решение: VIN/аукцион, украинский рынок и критичные технические риски.
 
 КАНДИДАТ:
 ${JSON.stringify(candidate)}
 
-МОЙ ПРОФИЛЬ ПОКУПКИ:
+МОЙ ПРОФИЛЬ:
 - первая машина в Украине;
 - максимум около $25,000;
 - пробег желательно 60–70k км;
-- хочу эффектную, дорогую на вид, спортивную/премиальную машину;
+- хочу эффектную спортивную/премиальную машину;
 - 0–100 желательно ~6 сек или быстрее;
-- важны надёжность, отсутствие системного денежного пылесоса, ликвидность в Украине и умеренная потеря цены через 1–2 года;
-- главный ориентир Infiniti Q60;
-- Stinger штрафуй за ликвидность, скучные массовые седаны не нужны.
+- важны надёжность, ликвидность и умеренная потеря цены;
+- главный ориентир Infiniti Q60.
 
-ОБЯЗАТЕЛЬНАЯ ПРОВЕРКА США:
-По VIN ищи Copart / IAAI / BidFax / Stat.vin / другие доступные архивы.
-Проверь фото ДО ремонта, primary/secondary damage, Run & Drive / Starts, airbags, силовую структуру, flood/water, пробег, Estimated Repair Cost, ACV, Retail Value, Final Bid.
-Не делай вывод "большой insurance estimate = труп" автоматически. Оцени реальный характер повреждения по фото и отношение estimate/ACV.
+ОБЯЗАТЕЛЬНО:
+- по VIN попробуй найти Copart / IAAI / BidFax / Stat.vin или другой доступный архив;
+- выясни damage, Run & Drive/Starts, airbags, structure, flood, auction mileage, Estimated Repair Cost, ACV, Retail Value, Final Bid, фото до ремонта;
+- сравни цену с украинским рынком;
+- оцени Real Buy-In первые ~6 месяцев;
+- учти комплектацию;
+- если данных нет — не выдумывай.
 
-ЖЁСТКИЕ REJECT:
-- flood/water;
-- пожар;
-- тяжёлый structural / rails / pillars / sills / floor / safety cell / geometry;
-- тяжёлый фронт с высоким риском двигателя/турбин/охлаждения;
-- множественный тяжёлый SRS;
-- сомнительное восстановление или история, которую невозможно нормально подтвердить.
-Если есть такой стоп-фактор — hard_reject=true.
-
-REAL BUY-IN:
-Оцени не только цену объявления, а реалистичную стоимость владения сразу после покупки:
-цена + ожидаемое первичное ТО + резина/тормоза/жидкости/подвеска/мелкие ремонты, которые вероятны в первые ~6 месяцев.
-Дай диапазон real_buy_in_low_usd / high.
-
-SELLER / LISTING:
-Отдельно оцени продавца/объявление: частник/площадка/перекуп, подозрительные формулировки и несостыковки VIN/год/привод/комплектация/пробег.
-
-КОМПЛЕКТАЦИЯ:
-Учитывай M Sport/AMG-style/пакеты, оптику, камеры, аудио, сиденья, диски, цвет салона и реально ликвидные опции. Бедная комплектация — минус.
+HARD REJECT: flood/water, fire, тяжёлый structural/safety-cell/geometry, тяжёлый фронт с риском силового агрегата/охлаждения, тяжёлый множественный SRS, сомнительное восстановление.
 
 SCORING 0–10:
-- price_score — цена относительно реального рынка;
-- history_score — история/повреждения/качество базы;
-- technical_score — надёжность и риск крупных расходов;
-- liquidity_score — ликвидность в Украине;
-- emotion_score — внешний вид/динамика/вау-эффект;
-- trim_score — комплектация.
-Итоговый рейтинг код посчитает сам с весами 25/25/20/15/10/5.
+price 25%, history 25%, technical 20%, liquidity 15%, emotion 10%, trim 5%.
+confidence_pct отражает полноту подтверждения.
+target_buy_price_usd — цена, при которой машина стала бы действительно интересной.
 
-CONFIDENCE:
-confidence_pct — насколько полно подтверждены данные. Если нет VIN/аукционных фото/ключевой истории, уверенность должна заметно падать.
-
-TARGET PRICE:
-Даже если машина сейчас НЕ гем, дай target_buy_price_usd — цену, при которой при прочих равных она стала бы действительно интересной.
-
-Не выдумывай отсутствующие значения. Для неизвестных чисел ставь 0, в строках пиши "нет данных".
-candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входного кандидата.
+candidate_key скопируй ТОЧНО: ${candidate.candidate_key}
 `;
 
   const result = await openaiJson({
     prompt,
     schema: analysisSchema,
-    name: "car_deep_analysis",
+    name: "luna_car_deep_analysis",
+    model: LUNA_MODEL,
     effort: "medium",
-    maxOutputTokens: 7000,
-    background: false,
+    maxOutputTokens: 4500,
+    useWebSearch: true,
+    searchContextSize: "medium",
+    maxToolCalls: 3,
   });
 
   return (result.analyses || [])[0] || null;
 }
 
-async function deepAnalyzeCandidates(candidates, state) {
-  if (!candidates.length) return { analyses: [] };
+async function solAuditOne(candidate, preliminary) {
+  const prompt = `
+Ты — FINAL AUDITOR Car Gem Scout. Luna уже сделала предварительный глубокий анализ машины.
+Твоя задача — НЕ повторять весь ресерч без необходимости, а проверить самые критичные места и решить, можно ли реально отправлять пользователю алерт "ГЕМ".
+
+КАНДИДАТ:
+${JSON.stringify(candidate)}
+
+ПРЕДВАРИТЕЛЬНЫЙ АНАЛИЗ LUNA:
+${JSON.stringify(preliminary)}
+
+ПРОВЕРЬ В ПЕРВУЮ ОЧЕРЕДЬ:
+1) VIN/аукцион и реальную тяжесть повреждения;
+2) flood/fire/structure/SRS и любые стоп-факторы;
+3) текущую цену против рынка Украины;
+4) технический риск крупных расходов;
+5) не завышены ли score/confidence.
+
+Не трать поиск на очевидные уже подтверждённые мелочи. Если источник не найден — снижай confidence, не выдумывай.
+Верни полный объект анализа той же структуры, исправив предварительный анализ там, где нужно.
+candidate_key должен остаться ровно: ${candidate.candidate_key}
+`;
+
+  const result = await openaiJson({
+    prompt,
+    schema: analysisSchema,
+    name: "sol_final_car_audit",
+    model: SOL_MODEL,
+    effort: "medium",
+    maxOutputTokens: 4200,
+    useWebSearch: true,
+    searchContextSize: "high",
+    maxToolCalls: 3,
+  });
+
+  return (result.analyses || [])[0] || null;
+}
+
+async function deepAnalyzeCandidates(candidates) {
+  if (!candidates.length) return { analyses: [], failed: 0 };
 
   const analyses = [];
-
-  // One car per response and sequential execution keep us under API TPM limits.
   let failed = 0;
+
   for (const candidate of candidates) {
     try {
-      const result = await deepAnalyzeOne(candidate);
+      const result = await lunaAnalyzeOne(candidate);
       if (result) analyses.push(result);
       else failed += 1;
     } catch (error) {
       failed += 1;
-      console.error("Deep analysis failed for " + candidate.candidate_key + ": " + String(error?.message || error));
+      console.error("Luna analysis failed for " + candidate.candidate_key + ": " + String(error?.message || error));
     }
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
   }
 
   if (candidates.length > 0 && analyses.length === 0) {
-    throw new Error("All selected deep analyses failed (" + failed + "/" + candidates.length + ")");
+    throw new Error("All selected Luna analyses failed (" + failed + "/" + candidates.length + ")");
   }
 
   return { analyses, failed };
@@ -800,8 +959,10 @@ try {
   state.last_collector_stats = direct.stats;
   state.last_collector_errors = (direct.errors || []).slice(0, 8);
   state.last_collector_mode = direct.items.length ? "direct" : "web_fallback";
+
   const discovery = await discoverCandidates(state, direct.items);
   commitObservedUrls(state, direct.observed_urls);
+
   const nowIso = new Date().toISOString();
   const discovered = (discovery.candidates || [])
     .filter((x) => x && (x.source_url || x.auto_ria_url || x.telegram_url))
@@ -811,6 +972,7 @@ try {
 
   const selected = discovered
     .filter((x) => {
+      if (x.needs_sol_audit) return true;
       if (x.never_analyzed) return true;
       if (x.price_drop_trigger) return true;
       if (x.target_price_trigger) return true;
@@ -818,11 +980,13 @@ try {
     })
     .sort((a, b) => {
       const ap =
+        (a.needs_sol_audit ? 1500 : 0) +
         (a.target_price_trigger ? 1000 : 0) +
         (a.price_drop_trigger ? 500 : 0) +
         (a.never_analyzed ? 100 : 0) +
         Number(a.discovery_score || 0);
       const bp =
+        (b.needs_sol_audit ? 1500 : 0) +
         (b.target_price_trigger ? 1000 : 0) +
         (b.price_drop_trigger ? 500 : 0) +
         (b.never_analyzed ? 100 : 0) +
@@ -834,30 +998,69 @@ try {
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
 
-  const deep = await deepAnalyzeCandidates(selected, state);
+  const deep = await deepAnalyzeCandidates(selected);
   state.last_deep_failed_count = Number(deep.failed || 0);
-  const analysisByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
+
+  const lunaByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
   const watch = ensureMarketWatch(state);
   const alerts = [];
+  let solAudits = 0;
+  let solAuditFailures = 0;
 
   for (const candidate of selected) {
-    const a = analysisByKey.get(candidate.candidate_key);
-    if (!a) continue;
+    const luna = lunaByKey.get(candidate.candidate_key);
+    if (!luna) continue;
 
+    const lunaScore = weightedScore(luna);
+    const lunaConfidence = Number(luna.confidence_pct || 0);
+    const lunaPrice = Number(luna.price_usd || candidate.price_usd || 0);
+
+    const shouldAuditWithSol =
+      !luna.hard_reject &&
+      lunaScore >= 8.1 &&
+      lunaConfidence >= 60 &&
+      lunaPrice > 0 &&
+      lunaPrice <= 26000;
+
+    let finalAnalysis = luna;
+    let solAuditOk = !shouldAuditWithSol;
+
+    if (shouldAuditWithSol) {
+      solAudits += 1;
+      try {
+        const audited = await solAuditOne(candidate, luna);
+        if (audited) {
+          finalAnalysis = audited;
+          solAuditOk = true;
+        } else {
+          solAuditFailures += 1;
+        }
+      } catch (error) {
+        solAuditFailures += 1;
+        console.error("Sol audit failed for " + candidate.candidate_key + ": " + String(error?.message || error));
+      }
+    }
+
+    const a = finalAnalysis;
     const score = weightedScore(a);
     const item = watch[candidate.candidate_key] || {};
+
     item.last_analyzed_at = nowIso;
     item.last_analyzed_price_usd = Number(a.price_usd || candidate.price_usd || 0);
     item.last_score = score;
+    item.last_luna_score = lunaScore;
     item.last_confidence_pct = Number(a.confidence_pct || 0);
     item.target_buy_price_usd = Number(a.target_buy_price_usd || 0);
     item.real_buy_in_low_usd = Number(a.real_buy_in_low_usd || 0);
     item.real_buy_in_high_usd = Number(a.real_buy_in_high_usd || 0);
     item.hard_reject = Boolean(a.hard_reject);
     item.hard_reject_reason = a.hard_reject_reason || "";
+    item.sol_audited_at = shouldAuditWithSol && solAuditOk ? nowIso : item.sol_audited_at || null;
+    item.needs_sol_audit = shouldAuditWithSol && !solAuditOk;
     watch[candidate.candidate_key] = item;
 
     const qualifies =
+      solAuditOk &&
       !a.hard_reject &&
       score >= 8.5 &&
       Number(a.confidence_pct || 0) >= 70 &&
@@ -874,16 +1077,21 @@ try {
     }
   }
 
+  state.last_sol_audits = solAudits;
+  state.last_sol_audit_failures = solAuditFailures;
   state.last_check_at = runStartedAt;
   state.completed_runs = Number(state.completed_runs || 0) + 1;
   state.last_error = null;
+  persistApiUsage(state);
 
   if (!alerts.length) {
     state.last_check_status = "no_gem";
     state.last_found_count = 0;
     state.last_sent_count = 0;
     saveState(state);
-    console.log(`Discovery: ${discovered.length}; deep analyzed: ${selected.length}; no qualifying gem. Telegram stays silent.`);
+    console.log(
+      `Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; no qualifying gem; estimated API cost: $${runUsage.estimated_cost_usd.toFixed(4)}.`
+    );
     process.exit(0);
   }
 
@@ -911,13 +1119,16 @@ try {
   }
 
   saveState(state);
-  console.log(`${state.last_sent_count} gem(s) sent to Telegram. Discovery: ${discovered.length}; deep analyzed: ${selected.length}.`);
+  console.log(
+    `${state.last_sent_count} gem(s) sent. Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; estimated API cost: $${runUsage.estimated_cost_usd.toFixed(4)}.`
+  );
 
 } catch (error) {
   state.last_check_at = runStartedAt;
   state.last_check_status = "error";
   state.last_error = String(error?.message || error).slice(0, 500);
   state.completed_runs = Number(state.completed_runs || 0) + 1;
+  persistApiUsage(state);
   saveState(state);
   throw error;
 }
