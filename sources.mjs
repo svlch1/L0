@@ -146,7 +146,10 @@ function extractMileageKm(text) {
     if (n >= 1000) return n;
   }
 
-  m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис|тыс|т\.?\s*м\.?)\s*(?:миль|mile|miles)?/i);
+  m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(?:тис\.?|тыс\.?)\s*(?:миль|mile|miles)\b/i);
+  if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000 * 1.60934);
+
+  m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*т\.?\s*м\.?\b/i);
   if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000 * 1.60934);
 
   m = s.match(/(\d{4,6})\s*(?:миль|mile|miles)\b/i);
@@ -492,7 +495,7 @@ function autoRiaCards(html, searchUrl, exploration = false) {
     const start = Math.max(0, m.index - 1800);
     const end = Math.min(html.length, m.index + 5200);
     const text = decodeHtml(html.slice(start, end)).slice(0, 2400);
-    const price = extractTelegramPriceUsd(text);
+    const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
     const vin = extractVin(text);
 
@@ -538,7 +541,7 @@ function telegramPosts(html, channel, label) {
     const text = decodeHtml(textMatch[1]).slice(0, 5000);
     const id = idMatch[1];
     const url = `https://t.me/${channel}/${id}`;
-    const price = extractPriceUsd(text);
+    const price = extractTelegramPriceUsd(text);
     const mileage = extractMileageKm(text);
     const vin = extractVin(text);
 
