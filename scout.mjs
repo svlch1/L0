@@ -617,7 +617,7 @@ PRICE WATCH:
 Ниже машины, которые мы уже видели. По возможности перепроверь, не изменилась ли у них цена и не перевыложены ли они:
 ${JSON.stringify(watchlist)}
 
-Цель — высокая полнота сбора. Лучше 15 релевантных кандидатов для второго этапа, чем сразу выбрать одного и пропустить более выгодный.
+Цель — высокая полнота сбора. Лучше до 10 релевантных кандидатов для второго этапа, чем сразу выбрать одного и пропустить более выгодный.
 `;
 
   return openaiJson({
@@ -625,7 +625,7 @@ ${JSON.stringify(watchlist)}
     schema: discoverySchema,
     name: "car_candidate_discovery",
     effort: "low",
-    maxOutputTokens: 16000,
+    maxOutputTokens: 5000,
   });
 }
 
@@ -695,8 +695,8 @@ candidate_key ОБЯЗАТЕЛЬНО скопируй ровно из входн
     schema: analysisSchema,
     name: "car_deep_analysis",
     effort: "medium",
-    maxOutputTokens: 16000,
-    background: true,
+    maxOutputTokens: 7000,
+    background: false,
   });
 
   return (result.analyses || [])[0] || null;
@@ -778,7 +778,7 @@ try {
         Number(b.discovery_score || 0);
       return bp - ap;
     })
-    .slice(0, 3);
+    .slice(0, 2);
 
   state.last_deep_analyzed_count = selected.length;
   saveState(state);
