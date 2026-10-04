@@ -277,9 +277,11 @@ export async function collectDirectSources(state = {}) {
   let autoItems = [];
 
   const autoUrls = autoRiaPageUrls();
+  let autoPagesScanned = 0;
   const autoResults = await mapLimit(autoUrls, HTTP_CONCURRENCY, async (url) => {
     try {
       const html = await fetchHtml(url);
+      autoPagesScanned += 1;
       return autoRiaCards(html, url);
     } catch (error) {
       const message = String(error?.message || error);
@@ -355,7 +357,7 @@ export async function collectDirectSources(state = {}) {
       telegram_candidates: telegramItems.length,
       total_candidates: items.length,
       auto_ria_models: AUTO_RIA_SEARCHES.length,
-      auto_ria_pages_scanned: autoUrls.length,
+      auto_ria_pages_scanned: autoPagesScanned,
       telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
       source_errors: errors.length,
     },
