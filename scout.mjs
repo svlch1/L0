@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { collectDirectSources, commitObservedUrls } from "./sources.mjs";
+import { weightedScore, calibrateAnalysis } from "./scoring.mjs";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -509,6 +510,10 @@ const analysisSchema = {
           real_buy_in_high_usd: { type: "integer" },
           target_buy_price_usd: { type: "integer" },
           confidence_pct: { type: "integer" },
+          history_evidence: { type: "string", enum: ["positive","mixed","negative","insufficient"] },
+          technical_evidence: { type: "string", enum: ["positive","mixed","negative","insufficient"] },
+          confirmed_red_flags: { type: "array", items: { type: "string" } },
+          unknowns: { type: "array", items: { type: "string" } },
           price_score: { type: "number" },
           history_score: { type: "number" },
           technical_score: { type: "number" },
@@ -534,6 +539,7 @@ const analysisSchema = {
           "resale_1y_low_usd","resale_1y_high_usd","resale_2y_low_usd",
           "resale_2y_high_usd","expected_loss_note","real_buy_in_low_usd",
           "real_buy_in_high_usd","target_buy_price_usd","confidence_pct",
+          "history_evidence","technical_evidence","confirmed_red_flags","unknowns",
           "price_score","history_score","technical_score","liquidity_score",
           "emotion_score","trim_score","why_gem","hard_reject","hard_reject_reason","verdict"
         ],
@@ -1160,18 +1166,6 @@ function recordDiscoveredCandidate(state, candidate, nowIso) {
   };
 }
 
-function weightedScore(a) {
-  const clamp = (n) => Math.max(0, Math.min(10, Number(n || 0)));
-  return Math.round((
-    clamp(a.price_score) * 0.25 +
-    clamp(a.history_score) * 0.25 +
-    clamp(a.technical_score) * 0.20 +
-    clamp(a.liquidity_score) * 0.15 +
-    clamp(a.emotion_score) * 0.10 +
-    clamp(a.trim_score) * 0.05
-  ) * 100) / 100;
-}
-
 function money(n) {
   n = Number(n || 0);
   return n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : "нет данных";
@@ -1223,14 +1217,11 @@ function interestingSnapshot(a, score, candidate, nowIso, previous = {}) {
   const restoredHistory = Math.max(history, 8);
   const restoredTech = Math.max(tech, 8);
 
-  const potential = Math.round((
-    clamp(a.price_score) * 0.25 +
-    restoredHistory * 0.25 +
-    restoredTech * 0.20 +
-    clamp(a.liquidity_score) * 0.15 +
-    clamp(a.emotion_score) * 0.10 +
-    clamp(a.trim_score) * 0.05
-  ) * 100) / 100;
+  const potential = weightedScore({
+    ...a,
+    history_score: restoredHistory,
+    technical_score: restoredTech,
+  });
 
   const reasons = [];
   if (history < 8) {
@@ -1356,7 +1347,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
       ? "👇 Ниже отправлю найденные ГЕМЫ."
       : "ГЕМов нет — продолжаю следить за рынком.",
     "",
-    "⌨️ /status · /almost · /top",
+    "⌨️ /status · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
 }
 
@@ -1580,7 +1571,27 @@ HARD REJECT: flood/water, fire, тяжёлый structural/safety-cell/geometry, 
 
 SCORING 0–10:
 price 25%, history 25%, technical 20%, liquidity 15%, emotion 10%, trim 5%.
-confidence_pct отражает полноту подтверждения.
+
+КРИТИЧЕСКАЯ КАЛИБРОВКА:
+- НЕИЗВЕСТНОСТЬ ≠ ПЛОХОЙ ФАКТ. "не найдено", "не указано", "не подтверждено", отсутствие фото/ACV/final bid сами по себе НЕ должны сильно снижать history_score или technical_score. Они снижают confidence_pct.
+- history_score оценивает ПОДТВЕРЖДЁННУЮ историю: реальную тяжесть ДТП, flood/fire, SRS, structural, качество восстановления. Если данных мало — history_evidence="insufficient" и держи score около нейтрального диапазона, а не 2–4/10.
+- technical_score оценивает ТЕКУЩИЙ технический риск мотора/коробки/турбин/охлаждения/подвески/электрики и подтверждённые последствия ремонта.
+- НЕ штрафуй одно и то же ДТП дважды. Сам факт старого удара относится прежде всего к history_score. В technical_score он идёт только если есть отдельные признаки текущей технической проблемы/геометрии.
+- hard_reject ставь только по подтверждённому или очень сильному факту, а не потому что информацию не удалось найти.
+- confidence_pct — отдельная оценка полноты данных и НЕ является частью итогового балла.
+- confirmed_red_flags: только реально подтверждённые негативные факты.
+- unknowns: что осталось неизвестным/неподтверждённым.
+
+Ориентиры шкалы из прошлых ручных разборов пользователя (калибровка, не обязательные оценки конкретных объявлений):
+[{"name":"Strong Acura TLX-style deal","expected":[8.4,8.8]},{"name":"Good Audi A5-style deal","expected":[8,8.4]},{"name":"Good Mustang-style deal","expected":[7.8,8.2]},{"name":"Solid Audi S3-style deal","expected":[7.5,7.9]},{"name":"Solid Lexus IS350-style deal","expected":[7.4,7.8]}]
+
+Интерпретация итогового score:
+<7.0 — слабый вариант;
+7.0–7.79 — нормальный, но недостаточно сильный;
+7.8–8.19 — сильный вариант;
+8.2–8.49 — почти GEM;
+>=8.5 — редкий GEM.
+
 target_buy_price_usd — цена, при которой машина стала бы действительно интересной.
 
 candidate_key скопируй ТОЧНО: ${candidate.candidate_key}
@@ -1626,6 +1637,13 @@ ${vinCache ? "КЭШ: " + JSON.stringify(vinCache) : ""}
 4) не завышены ли score/confidence.
 
 Не трать поиск на очевидные уже подтверждённые мелочи. Если источник не найден — снижай confidence, не выдумывай.
+
+КАЛИБРОВКА ФИНАЛЬНОГО АУДИТА:
+- отсутствие данных снижает confidence, а не автоматически score;
+- не штрафуй одно ДТП одновременно в history и technical без отдельного подтверждённого текущего последствия;
+- hard_reject только по реальному стоп-фактору, не по отсутствию информации;
+- сохрани history_evidence / technical_evidence / confirmed_red_flags / unknowns и поправь их, если Luna ошиблась.
+
 Верни полный объект анализа той же структуры, исправив предварительный анализ там, где нужно.
 candidate_key должен остаться ровно: ${candidate.candidate_key}
 `;
@@ -1773,9 +1791,10 @@ try {
   let gemsQualifiedThisRun = 0;
 
   for (const candidate of selected) {
-    const luna = lunaByKey.get(candidate.candidate_key);
-    if (!luna) continue;
+    const rawLuna = lunaByKey.get(candidate.candidate_key);
+    if (!rawLuna) continue;
 
+    const luna = calibrateAnalysis(rawLuna);
     const lunaScore = weightedScore(luna);
     const lunaConfidence = Number(luna.confidence_pct || 0);
     const lunaPrice = Number(luna.price_usd || candidate.price_usd || 0);
@@ -1795,7 +1814,7 @@ try {
       try {
         const audited = await solAuditOne(candidate, luna, getVinCache(state, candidate));
         if (audited) {
-          finalAnalysis = audited;
+          finalAnalysis = calibrateAnalysis(audited);
           solAuditOk = true;
         } else {
           solAuditFailures += 1;
@@ -1829,6 +1848,7 @@ try {
       !a.hard_reject &&
       score >= 7.8 &&
       score < 8.5 &&
+      Number(a.confidence_pct || 0) >= 60 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 26000
     ) {
       almostQualifiedThisRun += 1;
@@ -1840,11 +1860,19 @@ try {
     const interestingCandidate = interestingSnapshot(a, score, candidate, nowIso, interesting[candidate.candidate_key] || {});
     if (
       !a.hard_reject &&
-      score >= 6.5 &&
-      score < 7.8 &&
-      interestingCandidate.potential_score >= 8.0 &&
-      interestingCandidate.penalty_points >= 0.5 &&
-      Number(a.price_usd || candidate.price_usd || 0) <= 26000
+      Number(a.price_usd || candidate.price_usd || 0) <= 26000 &&
+      (
+        (
+          score >= 6.5 &&
+          score < 7.8 &&
+          interestingCandidate.potential_score >= 8.0 &&
+          interestingCandidate.penalty_points >= 0.5
+        ) ||
+        (
+          score >= 7.8 &&
+          Number(a.confidence_pct || 0) < 60
+        )
+      )
     ) {
       interesting[candidate.candidate_key] = interestingCandidate;
     } else {
