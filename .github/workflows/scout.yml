@@ -41,8 +41,7 @@ jobs:
           TEST_ONLY: ${{ github.event_name == 'push' && 'true' || (github.event_name == 'workflow_dispatch' && inputs.test_only || 'false') }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: node scout.mjs
-      - name: Save alerted VINs and URLs
-        if: github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.test_only != 'true')
+      - name: Save scout state
         run: |
           if git diff --quiet -- seen.json; then
             exit 0
