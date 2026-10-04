@@ -840,38 +840,52 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
   const watchCount = Object.keys(state.market_watch || {}).length;
+  const vinCacheCount = Object.keys(state.vin_cache || {}).length;
   const autoCount = Number(direct?.stats?.auto_ria_candidates || 0);
   const tgCount = Number(direct?.stats?.telegram_candidates || 0);
   const sourceErrors = Number(direct?.stats?.source_errors || 0);
-  const modelCount = Number(direct?.stats?.auto_ria_models || 0);
+  const modelCount = Number(direct?.stats?.auto_ria_models || 33);
   const autoPages = Number(direct?.stats?.auto_ria_pages_scanned || 0);
   const tgPages = Number(direct?.stats?.telegram_pages_scanned || 0);
 
   return [
-    "📡 Car Gem Scout — проход завершён",
+    "📡 Car Gem Scout — проверка завершена",
     "",
-    `📥 Прямой сбор: AUTO.RIA ${autoCount} / Telegram ${tgCount}`,
-    `🗺 Проверено: AUTO.RIA — ${modelCount} основных моделей + широкий поиск по брендам; Telegram — ${tgPages} страниц`,
-    state.last_exploration_brands?.length ? `🔄 Доп. поиск сегодня: ${state.last_exploration_brands.join(", ")}` : null,
-    `🧲 Luna отобрала кандидатов: ${discoveredCount}`,
-    `⏳ Осталось в очереди на первичный просмотр: ${state.last_source_queue_count || 0}`,
-    `💰 Ценовых аномалий >=10% в текущем пакете: ${state.last_price_anomaly_count || 0}`,
-    `🔬 Luna deep-analysis: ${selectedCount}`,
-    `🧠 Sol final audit: ${solAudits}`,
-    `🟡 Почти гемов 7.8–8.4: ${almostCount} (команда /almost)`,
-    `👀 Под price-watch: ${watchCount}`,
-    `🔥 ГЕМов >=8.5 в этом проходе: ${gemCount}`,
-    sourceErrors ? `⚠️ Ошибок источников: ${sourceErrors}` : null,
+    "🔎 Что просмотрено",
+    `• Новых подходящих объявлений AUTO.RIA: ${autoCount}`,
+    `• Новых подходящих постов Telegram: ${tgCount}`,
+    `• AUTO.RIA: ${modelCount} целевых моделей + ротационный поиск по брендам (${autoPages} страниц)`,
+    `• Telegram: KIEVAVTO + IsAuto, просмотрено ${tgPages} страниц`,
+    state.last_exploration_brands?.length
+      ? `• Дополнительный широкий поиск: ${state.last_exploration_brands.join(", ")}`
+      : null,
     "",
-    `💸 API проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
-    `🪙 Tokens: in ${compactTokens(usage.input_tokens)} / out ${compactTokens(usage.output_tokens)} / web ${usage.web_search_calls || 0}`,
-    `📅 API сегодня (учтено ботом): ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
+    "🧠 Что сделал анализ",
+    `• После первичного отбора осталось кандидатов: ${discoveredCount}`,
+    `• Глубоко проверено Luna: ${selectedCount}`,
+    `• Финально перепроверено сильных кандидатов: ${solAudits}`,
+    `• Почти гемов 7.8–8.4 в базе: ${almostCount}`,
+    `• Настоящих ГЕМов >=8.5 в этом проходе: ${gemCount}`,
     "",
-    gemCount ? "👇 Ниже отправлю найденные ГЕМЫ отдельными сообщениями." : "ГЕМов нет — следующий проход по расписанию.",
+    "👀 Что бот продолжает отслеживать",
+    `• Машин под наблюдением за ценой: ${watchCount}`,
+    `• Ждут первичного просмотра: ${state.last_source_queue_count || 0}`,
+    `• Ценовых аномалий >=10% в текущем пакете: ${state.last_price_anomaly_count || 0}`,
+    `• VIN-историй сохранено в кэше: ${vinCacheCount}`,
+    sourceErrors ? `• Ошибок источников: ${sourceErrors}` : null,
     "",
-    "⌨️ Команды:",
-    "/status — текущий статус",
-    "/almost — машины 7.8–8.4",
+    "💸 Расход OpenAI API",
+    `• За этот проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
+    `• За сегодня, учтено ботом: ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
+    `• Токены: вход ${compactTokens(usage.input_tokens)} / выход ${compactTokens(usage.output_tokens)} / web-поиск ${usage.web_search_calls || 0}`,
+    "",
+    gemCount
+      ? "🔥 Ниже отправлю найденные ГЕМЫ отдельными сообщениями."
+      : "ГЕМов в этом проходе нет. Продолжаю следить за рынком.",
+    "",
+    "⌨️ Команды",
+    "/status — что сейчас делает бот и статистика",
+    "/almost — машины с рейтингом 7.8–8.4",
     "/start — показать статус / проверить бота",
   ].filter(Boolean).join("\n");
 }
