@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -24,15 +25,62 @@ async function telegram(method, body) {
   return data.result;
 }
 
-async function getChatId() {
-  const updates = await telegram("getUpdates", { limit: 100, timeout: 0 });
-  const privateMessages = updates
-    .map((u) => u.message)
-    .filter((m) => m?.chat?.id && m.chat.type === "private");
-  if (!privateMessages.length) {
-    throw new Error("No Telegram private chat found. Open @DanilCarGemBot and send /start.");
+function encryptChatId(chatId) {
+  const key = crypto.createHash("sha256").update(TELEGRAM_BOT_TOKEN).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(String(chatId), "utf8"), cipher.final()]);
+  return {
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    data: encrypted.toString("base64"),
+  };
+}
+
+function decryptChatId(payload) {
+  try {
+    if (!payload?.iv || !payload?.tag || !payload?.data) return null;
+    const key = crypto.createHash("sha256").update(TELEGRAM_BOT_TOKEN).digest();
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      key,
+      Buffer.from(payload.iv, "base64")
+    );
+    decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(payload.data, "base64")),
+      decipher.final(),
+    ]);
+    return plain.toString("utf8");
+  } catch {
+    return null;
   }
-  return String(privateMessages.at(-1).chat.id);
+}
+
+async function getChatId() {
+  const state = loadSeen();
+  const savedChatId = decryptChatId(state.telegram_chat);
+  if (savedChatId) return savedChatId;
+
+  for (let attempt = 1; attempt <= 12; attempt++) {
+    const updates = await telegram("getUpdates", { limit: 100, timeout: 20 });
+    const privateMessages = updates
+      .map((u) => u.message)
+      .filter((m) => m?.chat?.id && m.chat.type === "private");
+
+    if (privateMessages.length) {
+      const chatId = String(privateMessages.at(-1).chat.id);
+      state.telegram_chat = encryptChatId(chatId);
+      fs.writeFileSync("seen.json", JSON.stringify(state, null, 2) + "\n");
+      console.log("Telegram destination discovered and encrypted.");
+      return chatId;
+    }
+
+    console.log(`Waiting for /start in @DanilCarGemBot... attempt ${attempt}/12`);
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+
+  throw new Error("No Telegram private chat found after waiting for /start.");
 }
 
 async function sendText(chatId, text) {
