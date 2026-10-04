@@ -259,7 +259,7 @@ Repair Estimate / ACV: ...%
       authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "gpt-5.6-sol",
+      model: "gpt-6.1-sol",
       reasoning: { effort: "high" },
       tools: [{
         type: "web_search",
