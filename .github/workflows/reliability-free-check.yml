@@ -36,3 +36,5 @@ jobs:
           if (r.source_health_warnings.length) process.exit(3);
           if (!r.pool.length && !r.price_changed_items.length) process.exit(2);
           NODE
+
+# final-rerun
