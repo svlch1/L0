@@ -1,0 +1,21 @@
+name: Status Funnel Syntax Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/status-funnel-check.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: |
+          node --check scout.mjs
+          node --check api/telegram.js
