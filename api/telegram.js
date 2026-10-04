@@ -96,73 +96,85 @@ function almostText(state) {
   ].join("\n\n").slice(0, 3900);
 }
 
-function statusText(state) {
-  let result = "ещё не было завершённой проверки";
+function topText(state) {
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+  const items = Object.values(state.top_gems_by_key || {})
+    .filter((x) => {
+      const at = Date.parse(x.found_at || x.updated_at || "");
+      return at && at >= cutoff && Number(x.score || 0) >= 8.5;
+    })
+    .sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff) return scoreDiff;
+      return String(b.found_at || "").localeCompare(String(a.found_at || ""));
+    })
+    .slice(0, 10);
 
-  if (state.last_check_status === "no_gem") {
-    result = "ГЕМов не найдено";
-  } else if (state.last_check_status === "found") {
-    result = `найдено ГЕМов: ${state.last_sent_count || 0}`;
-  } else if (state.last_check_status === "error") {
-    result = `ошибка: ${state.last_error || "неизвестная"}`;
+  if (!items.length) {
+    return [
+      "🏆 Топ ГЕМов за последние 30 дней",
+      "",
+      "Пока ни одной машины не прошло финальный порог >=8.5/10.",
+      "Как только бот найдёт первый ГЕМ — он появится здесь."
+    ].join("\n");
   }
+
+  const blocks = items.map((x, i) => {
+    const date = x.found_at ? formatKyiv(x.found_at).split(",")[0] : "нет даты";
+    const pluses = Array.isArray(x.pluses) && x.pluses.length
+      ? x.pluses.map((p) => "✅ " + String(p).replace(/\s+/g, " ")).join("\n")
+      : "✅ Сильная совокупность цены и состояния";
+    const minus = String(x.minus || "Явных критичных минусов не найдено.")
+      .replace(/\s+/g, " ")
+      .slice(0, 170);
+
+    return [
+      `${i + 1}. 🔥 ${x.model || "Авто"} ${x.year || ""} ${x.trim || ""}`.trim(),
+      `⭐ ${Number(x.score || 0).toFixed(2)}/10 · ${money(x.price_usd)} · найден ${date}`,
+      pluses,
+      `⚠️ ${minus}`,
+      x.url ? `🔗 ${x.url}` : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  return [
+    "🏆 Топ ГЕМов за последние 30 дней",
+    "",
+    ...blocks
+  ].join("\n\n").slice(0, 4000);
+}
+
+function statusText(state) {
+  let result = "ещё не было проверки";
+  if (state.last_check_status === "no_gem") result = "ГЕМов не найдено";
+  else if (state.last_check_status === "found") result = `найдено ГЕМов: ${state.last_sent_count || 0}`;
+  else if (state.last_check_status === "error") result = "ошибка последнего прохода";
 
   const healthy = state.last_check_status !== "error";
   const usage = state.last_api_usage || null;
   const today = state.api_usage_today || null;
-  const collector = state.last_collector_stats || {};
+  const watchCount = Object.keys(state.market_watch || {}).length;
   const almostCount = Object.values(state.almost_gems_by_key || {})
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
-  const watchCount = Object.keys(state.market_watch || {}).length;
-  const vinCacheCount = Object.keys(state.vin_cache || {}).length;
-  const modelCount = Number(collector.auto_ria_models || 33);
 
   return [
     healthy ? "🟢 Car Gem Scout работает" : "🔴 Car Gem Scout: есть ошибка",
-    "Ищу эффектные премиум/спорт авто примерно до $25k. Настоящий ГЕМ — итоговый рейтинг от 8.5/10 и уверенность от 70%.",
     "",
-    "⏱ Расписание",
-    "• Проверка рынка: каждые 4 часа / 6 раз в сутки",
-    `• Последняя проверка: ${formatKyiv(state.last_check_at)}`,
-    `• Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
-    `• Итог последней проверки: ${result}`,
-    "",
-    "🔎 Что произошло в последнем проходе",
-    `• После первичного отбора осталось кандидатов: ${state.last_discovered_count || 0}`,
-    `• Глубоко проверено Luna: ${state.last_deep_analyzed_count || 0}`,
-    `• Финально перепроверено сильных кандидатов: ${state.last_sol_audits || 0}`,
-    `• Почти гемов 7.8–8.4 в базе: ${almostCount}`,
-    `• Машин под наблюдением за ценой: ${watchCount}`,
-    `• Ждут первичного просмотра: ${state.last_source_queue_count || 0}`,
-    `• Ценовых аномалий >=10% в последнем пакете: ${state.last_price_anomaly_count || 0}`,
-    `• VIN-историй сохранено: ${vinCacheCount}`,
-    "",
-    "🗺 Где бот ищет",
-    `• AUTO.RIA: ${modelCount} целевых моделей + ротационный широкий поиск по брендам`,
-    "• Telegram: KIEVAVTO + IsAuto, с пролистыванием назад до уже просмотренных постов",
-    state.last_exploration_brands?.length
-      ? `• Последний широкий поиск: ${state.last_exploration_brands.join(", ")}`
-      : null,
-    "",
-    "💸 Расход OpenAI API",
-    usage
-      ? `• Последний проход: ~${usd(usage.estimated_cost_usd)}`
-      : "• Учёт стоимости начнётся с первого прохода новой версии",
-    today ? `• Сегодня, учтено ботом: ~${usd(today.estimated_cost_usd)}` : null,
-    usage
-      ? `• Токены: вход ${compactTokens(usage.input_tokens)} / выход ${compactTokens(usage.output_tokens)} / web-поиск ${usage.web_search_calls || 0}`
-      : null,
-    "",
-    "ℹ️ Luna — недорогая модель OpenAI, которой бот делает глубокую проверку кандидатов. Более дорогая финальная модель включается только для действительно сильных вариантов.",
-    "",
-    "📊 Всего отправлено ГЕМов: " + Number(state.total_gems_sent || 0),
-    "🔁 Завершённых проходов: " + Number(state.completed_runs || 0),
+    `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
+    `🔎 Результат: ${result}`,
+    `🔬 Глубоко проверено Luna: ${state.last_deep_analyzed_count || 0}`,
+    `👀 Машин под наблюдением: ${watchCount}`,
+    `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
+    `🔥 Всего отправлено ГЕМов: ${state.total_gems_sent || 0}`,
+    usage ? `💸 Последний проход: ~${usd(usage.estimated_cost_usd)}` : "💸 Стоимость появится после следующего прохода",
+    today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
+    `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
     "",
     "⌨️ Команды",
-    "/status — текущий статус и статистика",
-    "/almost — машины с рейтингом 7.8–8.4",
-    "/start — показать статус / проверить бота",
+    "/status — статус бота",
+    "/almost — машины 7.8–8.4",
+    "/top — лучшие ГЕМЫ за 30 дней",
   ].filter(Boolean).join("\n");
 }
 
@@ -177,14 +189,16 @@ export default async function handler(req, res) {
   }
 
   const text = String(message.text || "").trim().toLowerCase();
-  if (!/^\/(start|status|almost)(@\w+)?\b/.test(text)) {
+  if (!/^\/(start|status|almost|top)(@\w+)?\b/.test(text)) {
     return res.status(200).json({ ok: true });
   }
 
   const state = await loadState();
   const reply = /^\/almost(@\w+)?\b/.test(text)
     ? almostText(state)
-    : statusText(state);
+    : /^\/top(@\w+)?\b/.test(text)
+      ? topText(state)
+      : statusText(state);
 
   return res.status(200).json({
     method: "sendMessage",
