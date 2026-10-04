@@ -1029,7 +1029,14 @@ try {
   state.last_collector_mode = direct.items.length ? "direct" : "web_fallback";
 
   const discovery = await discoverCandidates(state, direct.items);
-  commitObservedUrls(state, direct.observed_urls);
+
+  // Mark only the cards that were actually handed to Luna.
+  // Cards discovered deeper in AUTO.RIA/Telegram but not included in this batch stay pending
+  // and will be offered again on a later pass instead of being silently skipped.
+  commitObservedUrls(
+    state,
+    direct.items.map((x) => x.source_url || x.auto_ria_url || x.telegram_url).filter(Boolean)
+  );
 
   const nowIso = new Date().toISOString();
   const discovered = (discovery.candidates || [])
