@@ -289,9 +289,18 @@ function statusText(state) {
     .filter((x) => Number(x.score || 0) >= 7.8 && Number(x.score || 0) < 8.5)
     .length;
   const interestingCount = Object.keys(state.interesting_by_key || {}).length;
-  const preliminaryCount = Object.values(state.preliminary_candidates_by_key || {})
-    .filter((x) => Number(x.discovery_score || 0) >= 7.5 && Number(x.discovery_score || 0) < 8.5)
-    .length;
+  const preliminaryKeys = new Set();
+  for (const x of Object.values(state.preliminary_candidates_by_key || {})) {
+    const score = Number(x.discovery_score || 0);
+    if (score >= 7.5 && score < 8.5) preliminaryKeys.add(x.key || x.url);
+  }
+  for (const x of Object.values(state.deep_queue || {})) {
+    const score = Number(x.discovery_score || 0);
+    if (score >= 7.5 && score < 8.5) {
+      preliminaryKeys.add(x.candidate_key || x.auto_ria_url || x.telegram_url || x.source_url);
+    }
+  }
+  const preliminaryCount = preliminaryKeys.size;
   const tgLine = telegramCoverageText(state.last_collector_stats || {});
   const deepQueue = Number(state.last_deep_queue_count || 0);
   const lastQuality = Array.isArray(state.quality_history) && state.quality_history.length
