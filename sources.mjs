@@ -1,15 +1,15 @@
 const AUTO_RIA_SEARCHES = [
-  "https://auto.ria.com/uk/car/infiniti/q60/price/26500/amp/",
-  "https://auto.ria.com/uk/car/bmw/4-series/price/26500/amp/",
-  "https://auto.ria.com/uk/car/bmw/4-series-gran-coupe/price/26500/amp/",
-  "https://auto.ria.com/uk/car/bmw/3-series/price/26500/amp/",
-  "https://auto.ria.com/uk/car/mercedes-benz/c-class/price/26500/amp/",
-  "https://auto.ria.com/uk/car/mercedes-benz/cla-class/price/26500/amp/",
-  "https://auto.ria.com/uk/car/lexus/rc/price/26500/amp/",
-  "https://auto.ria.com/uk/car/lexus/is/price/26500/amp/",
-  "https://auto.ria.com/uk/car/audi/a5/price/26500/amp/",
-  "https://auto.ria.com/uk/car/audi/s5/price/26500/amp/",
-  "https://auto.ria.com/uk/car/genesis/g70/price/26500/amp/"
+  "https://auto.ria.com/uk/car/infiniti/q60/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/4-series/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/4-series-gran-coupe/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/3-series/price/25000/amp/",
+  "https://auto.ria.com/uk/car/mercedes-benz/c-class/price/25000/amp/",
+  "https://auto.ria.com/uk/car/mercedes-benz/cla-class/price/25000/amp/",
+  "https://auto.ria.com/uk/car/lexus/rc/price/25000/amp/",
+  "https://auto.ria.com/uk/car/lexus/is/price/25000/amp/",
+  "https://auto.ria.com/uk/car/audi/a5/price/25000/amp/",
+  "https://auto.ria.com/uk/car/audi/s5/price/25000/amp/",
+  "https://auto.ria.com/uk/car/genesis/g70/price/25000/amp/"
 ];
 
 const TELEGRAM_FEEDS = [
