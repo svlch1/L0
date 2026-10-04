@@ -1336,7 +1336,8 @@ ${cacheInstruction}
 - оцени Real Buy-In первые ~6 месяцев;
 - учти комплектацию;
 - учитывай локальный price_anomaly_pct только как сигнал, а не как доказательство выгодности;
-- если данных нет — не выдумывай.
+- если данных нет — не выдумывай;
+- ОТВЕЧАЙ КРАТКО: строковые поля максимум 1–2 коротких предложения, списки только самые важные пункты. Не раздувай JSON.
 
 HARD REJECT: flood/water, fire, тяжёлый structural/safety-cell/geometry, тяжёлый фронт с риском силового агрегата/охлаждения, тяжёлый множественный SRS, сомнительное восстановление.
 
@@ -1354,7 +1355,7 @@ candidate_key скопируй ТОЧНО: ${candidate.candidate_key}
     name: "luna_car_deep_analysis",
     model: LUNA_MODEL,
     effort: "medium",
-    maxOutputTokens: 4500,
+    maxOutputTokens: 6000,
     useWebSearch: true,
     searchContextSize: "medium",
     maxToolCalls: vinCache ? 2 : 3,
