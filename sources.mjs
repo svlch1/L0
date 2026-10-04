@@ -1,23 +1,52 @@
 const AUTO_RIA_SEARCHES = [
+  // Core: максимально близко к тому, что ты ищешь.
   "https://auto.ria.com/uk/car/infiniti/q60/price/25000/amp/",
+  "https://auto.ria.com/uk/car/infiniti/q50/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/2-series/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/3-series/price/25000/amp/",
   "https://auto.ria.com/uk/car/bmw/4-series/price/25000/amp/",
   "https://auto.ria.com/uk/car/bmw/4-series-gran-coupe/price/25000/amp/",
-  "https://auto.ria.com/uk/car/bmw/3-series/price/25000/amp/",
   "https://auto.ria.com/uk/car/mercedes-benz/c-class/price/25000/amp/",
   "https://auto.ria.com/uk/car/mercedes-benz/cla-class/price/25000/amp/",
   "https://auto.ria.com/uk/car/lexus/rc/price/25000/amp/",
   "https://auto.ria.com/uk/car/lexus/is/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/a5/price/25000/amp/",
+  "https://auto.ria.com/uk/car/audi/s4/price/25000/amp/",
   "https://auto.ria.com/uk/car/audi/s5/price/25000/amp/",
-  "https://auto.ria.com/uk/car/genesis/g70/price/25000/amp/"
+  "https://auto.ria.com/uk/car/audi/tt/price/25000/amp/",
+  "https://auto.ria.com/uk/car/genesis/g70/price/25000/amp/",
+
+  // Exploration: могут быть менее очевидны, но сильная цена/комплектация должна иметь шанс.
+  "https://auto.ria.com/uk/car/bmw/5-series/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/6-series-gran-coupe/price/25000/amp/",
+  "https://auto.ria.com/uk/car/mercedes-benz/e-class/price/25000/amp/",
+  "https://auto.ria.com/uk/car/mercedes-benz/cls-class/price/25000/amp/",
+  "https://auto.ria.com/uk/car/lexus/gs/price/25000/amp/",
+  "https://auto.ria.com/uk/car/audi/a4/price/25000/amp/",
+  "https://auto.ria.com/uk/car/genesis/g80/price/25000/amp/",
+  "https://auto.ria.com/uk/car/cadillac/ats/price/25000/amp/",
+  "https://auto.ria.com/uk/car/cadillac/cts/price/25000/amp/",
+  "https://auto.ria.com/uk/car/acura/tlx/price/25000/amp/",
+  "https://auto.ria.com/uk/car/jaguar/xe/price/25000/amp/",
+  "https://auto.ria.com/uk/car/alfa-romeo/giulia/price/25000/amp/",
+  "https://auto.ria.com/uk/car/ford/mustang/price/25000/amp/",
+  "https://auto.ria.com/uk/car/chevrolet/camaro/price/25000/amp/",
+  "https://auto.ria.com/uk/car/dodge/challenger/price/25000/amp/",
+  "https://auto.ria.com/uk/car/kia/stinger/price/25000/amp/",
+  "https://auto.ria.com/uk/car/volvo/s60/price/25000/amp/",
+  "https://auto.ria.com/uk/car/nissan/370z/price/25000/amp/"
 ];
+
+const AUTO_RIA_PAGES_PER_MODEL = 2;
+const TELEGRAM_MAX_PAGES = 6;
+const HTTP_CONCURRENCY = 8;
 
 const TELEGRAM_FEEDS = [
   { channel: "kievavto2", url: "https://t.me/s/kievavto2" },
   { channel: "isAuto99", url: "https://t.me/s/isAuto99" },
 ];
 
-const INTERESTING_BRANDS = /\b(?:BMW|Mercedes(?:-Benz)?|Infiniti|Lexus|Audi|Genesis|Porsche|Jaguar|Cadillac|Acura|Volvo|Mustang|Camaro|Challenger|Maserati)\b/i;
+const INTERESTING_BRANDS = /\b(?:BMW|Mercedes(?:-Benz)?|Infiniti|Lexus|Audi|Genesis|Porsche|Jaguar|Cadillac|Acura|Volvo|Mustang|Camaro|Challenger|Maserati|Alfa\s+Romeo|Giulia|Stinger|370Z)\b/i;
 
 function decodeHtml(s) {
   return String(s || "")
@@ -92,6 +121,66 @@ async function fetchHtml(url) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function mapLimit(items, limit, worker) {
+  const out = new Array(items.length);
+  let next = 0;
+
+  async function run() {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await worker(items[i], i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => run()));
+  return out;
+}
+
+function autoRiaPageUrls() {
+  return AUTO_RIA_SEARCHES.flatMap((base) => {
+    const urls = [base];
+    for (let page = 2; page <= AUTO_RIA_PAGES_PER_MODEL; page++) {
+      urls.push(base + "?page=" + page);
+    }
+    return urls;
+  });
+}
+
+function telegramPostIds(html, channel) {
+  return [...String(html).matchAll(new RegExp(`data-post=["']${channel}/(\\d+)["']`, "gi"))]
+    .map((m) => Number(m[1]))
+    .filter(Number.isFinite);
+}
+
+async function fetchTelegramPages(channel, url, errors) {
+  const pages = [];
+  let nextUrl = url;
+  const seenPageStarts = new Set();
+
+  for (let page = 0; page < TELEGRAM_MAX_PAGES; page++) {
+    try {
+      const html = await fetchHtml(nextUrl);
+      const ids = telegramPostIds(html, channel);
+      if (!ids.length) break;
+
+      const lowest = Math.min(...ids);
+      const highest = Math.max(...ids);
+      const signature = highest + ":" + lowest;
+      if (seenPageStarts.has(signature)) break;
+      seenPageStarts.add(signature);
+
+      pages.push(html);
+      nextUrl = url + "?before=" + lowest;
+    } catch (error) {
+      errors.push(`Telegram ${channel} page ${page + 1}: ${String(error?.message || error)}`);
+      break;
+    }
+  }
+
+  return pages;
 }
 
 function autoRiaCards(html, searchUrl) {
@@ -187,17 +276,17 @@ export async function collectDirectSources(state = {}) {
   const errors = [];
   let autoItems = [];
 
-  const autoResults = await Promise.all(
-    AUTO_RIA_SEARCHES.map(async (url) => {
-      try {
-        const html = await fetchHtml(url);
-        return autoRiaCards(html, url);
-      } catch (error) {
-        errors.push(`AUTO.RIA ${url}: ${String(error?.message || error)}`);
-        return [];
-      }
-    })
-  );
+  const autoUrls = autoRiaPageUrls();
+  const autoResults = await mapLimit(autoUrls, HTTP_CONCURRENCY, async (url) => {
+    try {
+      const html = await fetchHtml(url);
+      return autoRiaCards(html, url);
+    } catch (error) {
+      // Некоторые редкие модели могут не иметь выдачи/второй страницы — это не должно валить весь проход.
+      errors.push(`AUTO.RIA ${url}: ${String(error?.message || error)}`);
+      return [];
+    }
+  });
 
   for (const group of autoResults) {
     for (const item of group) {
@@ -227,21 +316,25 @@ export async function collectDirectSources(state = {}) {
   let telegramItems = [];
   const tgResults = await Promise.all(
     TELEGRAM_FEEDS.map(async ({ channel, url }) => {
-      try {
-        const html = await fetchHtml(url);
-        return telegramPosts(html, channel);
-      } catch (error) {
-        errors.push(`Telegram ${channel}: ${String(error?.message || error)}`);
-        return [];
+      const pages = await fetchTelegramPages(channel, url, errors);
+      const byUrl = new Map();
+
+      for (const html of pages) {
+        for (const item of telegramPosts(html, channel)) {
+          const key = normalizeUrl(item.source_url);
+          if (!byUrl.has(key)) byUrl.set(key, item);
+        }
       }
+
+      return [...byUrl.values()];
     })
   );
 
   for (const group of tgResults) {
     for (const item of group) {
-      const url = normalizeUrl(item.source_url);
-      observed.add(url);
-      if (!seen.has(url)) telegramItems.push(item);
+      const normalized = normalizeUrl(item.source_url);
+      observed.add(normalized);
+      if (!seen.has(normalized)) telegramItems.push(item);
     }
   }
 
@@ -258,6 +351,9 @@ export async function collectDirectSources(state = {}) {
       auto_ria_candidates: autoItems.length,
       telegram_candidates: telegramItems.length,
       total_candidates: items.length,
+      auto_ria_models: AUTO_RIA_SEARCHES.length,
+      auto_ria_pages_scanned: autoUrls.length,
+      telegram_pages_scanned: tgResults.reduce((sum, group) => sum + (group.length ? 1 : 0), 0),
       source_errors: errors.length,
     },
     errors,
