@@ -1,0 +1,49 @@
+name: Car Gem Scout
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+    - cron: "0 6 * * *"
+    - cron: "0 16 * * *"
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+    inputs:
+      test_only:
+        description: "Send only a Telegram test message"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Car Gem Scout
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TEST_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_only || 'false' }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: node scout.mjs
+      - name: Save alerted VINs and URLs
+        if: github.event_name != 'workflow_dispatch' || inputs.test_only != 'true'
+        run: |
+          if git diff --quiet -- seen.json; then
+            exit 0
+          fi
+          git config user.name "Car Gem Scout"
+          git config user.email "car-gem-scout@users.noreply.github.com"
+          git add seen.json
+          git commit -m "Update Car Gem Scout seen list"
+          git push

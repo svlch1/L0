@@ -1,0 +1,275 @@
+import fs from "node:fs";
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const TEST_ONLY = process.env.TEST_ONLY === "true";
+
+function kyivHour() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Kyiv",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  return Number(parts.find((p) => p.type === "hour")?.value);
+}
+
+async function telegram(method, body) {
+  const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (!r.ok || !data.ok) throw new Error(`Telegram ${method} failed: ${JSON.stringify(data)}`);
+  return data.result;
+}
+
+async function getChatId() {
+  const updates = await telegram("getUpdates", { limit: 100, timeout: 0 });
+  const privateMessages = updates
+    .map((u) => u.message)
+    .filter((m) => m?.chat?.id && m.chat.type === "private");
+  if (!privateMessages.length) {
+    throw new Error("No Telegram private chat found. Open @DanilCarGemBot and send /start.");
+  }
+  return String(privateMessages.at(-1).chat.id);
+}
+
+async function sendText(chatId, text) {
+  let rest = text.trim();
+  while (rest.length) {
+    let cut = Math.min(3900, rest.length);
+    if (rest.length > 3900) {
+      const nl = rest.lastIndexOf("\n", 3900);
+      if (nl > 2500) cut = nl;
+    }
+    const chunk = rest.slice(0, cut).trim();
+    rest = rest.slice(cut).trim();
+    if (!chunk) continue;
+    await telegram("sendMessage", {
+      chat_id: chatId,
+      text: chunk,
+      disable_web_page_preview: false,
+    });
+  }
+}
+
+function loadSeen() {
+  try {
+    return JSON.parse(fs.readFileSync("seen.json", "utf8"));
+  } catch {
+    return { vins: [], urls: [] };
+  }
+}
+
+function saveSeen(seen, text) {
+  const vins = [...text.matchAll(/\b[A-HJ-NPR-Z0-9]{17}\b/g)].map((m) => m[0]);
+  const urls = [...text.matchAll(/https?:\/\/[^\s<>()]+/g)].map((m) => m[0].replace(/[.,;]+$/, ""));
+  seen.vins = [...new Set([...(seen.vins || []), ...vins])].slice(-500);
+  seen.urls = [...new Set([...(seen.urls || []), ...urls])].slice(-1000);
+  fs.writeFileSync("seen.json", JSON.stringify(seen, null, 2) + "\n");
+}
+
+async function research(seen) {
+  const prompt = `
+Ты — мой персональный Car Gem Scout. Подбираешь мне ПЕРВУЮ машину в Украине.
+Тебе нельзя присылать просто хорошие или интересные варианты. Нужны ТОЛЬКО реальные ГЕМЫ, которые после глубокого ресерча выглядят как сильная покупка.
+
+ИСТОЧНИКИ, которые надо обязательно проверить:
+1. AUTO.RIA — свежие объявления по Украине.
+2. KIEVAVTO — https://t.me/kievavto2 и публичная веб-лента https://t.me/s/kievavto2
+3. IsAuto — https://t.me/isAuto99 и публичные/индексированные посты канала.
+После нахождения кандидата обязательно делай отдельный поиск по VIN в Copart, IAAI, BidFax, Stat.vin и других доступных архивах аукционов.
+
+МОИ КРИТЕРИИ:
+- бюджет до $25,000;
+- пробег желательно до 60–70 тыс. км;
+- машина должна выглядеть очень эффектно, дорого, спортивно/премиально, не как обычный массовый седан;
+- хочется реально кайфовать от первой машины;
+- динамика желательно около 6 секунд 0–100 или быстрее; немного медленнее допустимо только если машина сама по себе исключительная;
+- модель не должна иметь репутацию постоянно проблемной и пожирающей большие деньги на СТО;
+- важна ликвидность в Украине;
+- желательно небольшой риск потери стоимости через 1–2 года;
+- главный ориентир — Infiniti Q60;
+- также подходят спортивные BMW/купе, Mercedes coupe/CLA/C-Class в хороших комплектациях, Lexus RC/IS, Audi и другие реально подходящие модели;
+- не предлагай Honda Accord и прочие скучные массовые седаны;
+- Kia Stinger обычно не предлагай из-за ликвидности, кроме совсем исключительной сделки.
+
+АМЕРИКАНСКАЯ ИСТОРИЯ:
+Машина из США допустима и даже ожидаема, но история должна быть ХОРОШЕЙ ДЛЯ ПОКУПКИ.
+Автоматически отбрасывай:
+- flood/water;
+- пожар;
+- тяжелый total;
+- сильные повреждения лонжеронов, стоек, порогов, пола, силовой клетки или геометрии;
+- тяжелый фронт с высоким риском двигателя/турбин/охлаждения;
+- множественные сработавшие airbags / тяжелый SRS;
+- машины, где невозможно нормально понять исходное повреждение или восстановление выглядит сомнительно.
+
+Умеренные кузовные/косметические повреждения допустимы, если силовая структура по фото выглядит целой, SRS адекватный, пробег последовательный и цена реально компенсирует историю.
+
+ПО КАЖДОМУ КАНДИДАТУ НУЖНО НАЙТИ:
+- VIN;
+- Copart или IAAI, lot и дату;
+- primary/secondary damage;
+- Run & Drive / Starts;
+- airbags;
+- состояние силовой структуры;
+- flood/water;
+- пробег на аукционе и последовательность пробега;
+- что видно на фото ДО ремонта;
+- Estimated Repair Cost / страховую оценку стоимости ремонта;
+- ACV / Actual Cash Value;
+- Retail Value, если есть;
+- Final Bid / Sale Price, если есть;
+- Estimated Repair Cost как процент от ACV;
+- типичные проблемы именно модели/двигателя;
+- что обязательно проверить на диагностике;
+- актуальную цену сопоставимых машин в Украине;
+- прогноз цены перепродажи через 1–2 года;
+- ликвидность.
+
+ВАЖНО ПРО СТРАХОВУЮ:
+Не делай вывод "дорогой estimate = машина убита" автоматически. Американская страховая оценка может быть огромной из-за официальных цен деталей/работы. Смотри прежде всего на фото и характер повреждений. Но всегда показывай мне сам estimate, ACV и отношение estimate/ACV, чтобы я видел масштаб.
+
+ЖЕСТКИЙ ФИЛЬТР:
+Присылай машину только если итогово она заслуживает минимум 8.5/10 и ты сам после проверки считаешь ее реально хорошей покупкой.
+Лучше НИЧЕГО не прислать, чем прислать посредственный вариант.
+Максимум 1–3 машины за запуск; предпочтительно один лучший ГЕМ.
+
+УЖЕ ПРИСЫЛАЛИ РАНЬШЕ — НЕ ПОВТОРЯЙ:
+VIN: ${(seen.vins || []).join(", ") || "нет"}
+URL: ${(seen.urls || []).slice(-100).join("\n") || "нет"}
+
+КРИТИЧНО: В ОТВЕТЕ ДОЛЖНЫ БЫТЬ ПРЯМЫЕ ССЫЛКИ.
+Если нашел на AUTO.RIA — дай полный URL конкретного объявления.
+Если нашел в Telegram — дай полный URL конкретного поста.
+Если та же машина есть и там, и там — дай ОБЕ ссылки.
+Также дай прямой URL на страницу лота/архива Copart/IAAI/BidFax/Stat.vin, где можно увидеть историю или фото до ремонта.
+Не пиши просто "AUTO.RIA" или "Copart" без ссылки.
+
+ЕСЛИ НЕТ НИ ОДНОГО НАСТОЯЩЕГО ГЕМА:
+верни РОВНО одно слово:
+NO_GEM
+
+ЕСЛИ ГЕМ ЕСТЬ — ФОРМАТ:
+
+🔥 ГЕМ / СМОТРЕТЬ СРОЧНО — [модель, год, комплектация]
+
+💵 Цена: $...
+🛣 Пробег: ... км
+⚙️ Двигатель / коробка / привод: ...
+🏁 0–100: ~... с
+⭐ Рейтинг покупки: X/10
+
+🔗 ГДЕ НАШЁЛ
+AUTO.RIA: https://...  (или "нет", если источником был Telegram)
+Telegram: https://...  (или "нет")
+История США / лот / фото до ремонта: https://...
+
+💎 ПОЧЕМУ ЭТО ГЕМ
+— 2–4 самых сильных аргумента без воды
+
+🇺🇸 ИСТОРИЯ США
+VIN: ...
+Аукцион / lot / дата: ...
+Primary / Secondary Damage: ...
+Run & Drive / Starts: ...
+Airbags: ...
+Силовая структура: ...
+Flood/Water: ...
+Пробег на аукционе: ...
+Фото до ремонта: кратко, что реально видно
+Estimated Repair Cost / страховая оценка: $...
+ACV: $...
+Retail Value: $... / нет данных
+Final Bid / Sale Price: $... / нет данных
+Repair Estimate / ACV: ...%
+
+🔧 ТЕХНИКА
+Типичные слабые места: ...
+Что проверить перед покупкой: ...
+Риск крупных расходов: низкий / средний / высокий
+
+💰 ДЕНЬГИ
+Рынок аналогов в Украине: $...–$...
+Насколько выгодно предложение: ...
+Ориентир перепродажи через 1–2 года: $...
+Ожидаемая потеря: ...
+Ликвидность: X/10
+
+🏁 ВЕРДИКТ
+Одно конкретное резюме: стал бы ты сам звонить продавцу и ехать смотреть эту машину первой или нет, и почему.
+
+Не выдумывай данные. Если цифры Estimated Repair Cost, ACV, Final Bid и т.п. реально не найдены — пиши "нет данных".
+`;
+
+  const r = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-6-sol",
+      reasoning: { effort: "high" },
+      tools: [{
+        type: "web_search",
+        search_context_size: "high",
+        user_location: {
+          type: "approximate",
+          country: "UA",
+          timezone: "Europe/Kyiv"
+        }
+      }],
+      input: prompt,
+      max_output_tokens: 6000,
+      store: false,
+    }),
+  });
+
+  const raw = await r.text();
+  if (!r.ok) throw new Error(`OpenAI API failed ${r.status}: ${raw.slice(0, 1000)}`);
+  const data = JSON.parse(raw);
+  return (data.output || [])
+    .filter((x) => x.type === "message")
+    .flatMap((x) => x.content || [])
+    .filter((x) => x.type === "output_text")
+    .map((x) => x.text || "")
+    .join("\n")
+    .trim();
+}
+
+if (!TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
+
+const chatId = await getChatId();
+
+if (TEST_ONLY) {
+  await sendText(chatId,
+    "✅ Car Gem Scout подключён.\n\n" +
+    "Я буду проверять AUTO.RIA + KIEVAVTO + IsAuto два раза в день и писать сюда только когда найду реальный ГЕМ.\n\n" +
+    "В каждом алерте будут прямые ссылки на объявление/Telegram-пост и историю США."
+  );
+  process.exit(0);
+}
+
+if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
+
+const event = process.env.GITHUB_EVENT_NAME || "";
+const hour = kyivHour();
+if (event === "schedule" && hour !== 8 && hour !== 19) {
+  console.log(`Skip: Kyiv hour is ${hour}`);
+  process.exit(0);
+}
+
+const seen = loadSeen();
+const result = await research(seen);
+
+if (!result || result === "NO_GEM" || result.includes("NO_GEM")) {
+  console.log("No gem found. Telegram stays silent.");
+  process.exit(0);
+}
+
+await sendText(chatId, result);
+saveSeen(seen, result);
+console.log("Gem sent to Telegram.");
