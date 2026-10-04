@@ -599,7 +599,7 @@ function updateSourceQueue(state, pool, nowIso) {
 
   const entries = Object.entries(queue)
     .sort((a, b) => String(b[1].last_seen_at || "").localeCompare(String(a[1].last_seen_at || "")))
-    .slice(0, 600);
+    .slice(0, 1500);
   state.source_queue = Object.fromEntries(entries);
   return state.source_queue;
 }
@@ -767,7 +767,7 @@ function enqueueDeepCandidates(state, candidates, nowIso) {
 
   const entries = Object.entries(queue)
     .sort((a, b) => String(b[1].last_queued_at || "").localeCompare(String(a[1].last_queued_at || "")))
-    .slice(0, 120);
+    .slice(0, 500);
   state.deep_queue = Object.fromEntries(entries);
   return state.deep_queue;
 }
