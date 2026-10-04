@@ -1115,6 +1115,68 @@ function ensureAlmostGems(state) {
   return state.almost_gems_by_key;
 }
 
+function ensureInteresting(state) {
+  if (!state.interesting_by_key || typeof state.interesting_by_key !== "object" || Array.isArray(state.interesting_by_key)) {
+    state.interesting_by_key = {};
+  }
+  return state.interesting_by_key;
+}
+
+function interestingSnapshot(a, score, candidate, nowIso, previous = {}) {
+  const clamp = (n) => Math.max(0, Math.min(10, Number(n || 0)));
+  const history = clamp(a.history_score);
+  const tech = clamp(a.technical_score);
+  const restoredHistory = Math.max(history, 8);
+  const restoredTech = Math.max(tech, 8);
+
+  const potential = Math.round((
+    clamp(a.price_score) * 0.25 +
+    restoredHistory * 0.25 +
+    restoredTech * 0.20 +
+    clamp(a.liquidity_score) * 0.15 +
+    clamp(a.emotion_score) * 0.10 +
+    clamp(a.trim_score) * 0.05
+  ) * 100) / 100;
+
+  const reasons = [];
+  if (history < 8) {
+    reasons.push(`история/ДТП: ${compactText(a.primary_secondary_damage || a.seller_risk || "история слабее желаемой", 150)}`);
+  }
+  if (tech < 8) {
+    reasons.push(`технический риск: ${compactText(a.weak_points || a.major_expense_risk || "техническая часть слабее желаемой", 150)}`);
+  }
+  if (a.listing_inconsistencies && a.listing_inconsistencies !== "нет данных") {
+    reasons.push(`объявление: ${compactText(a.listing_inconsistencies, 140)}`);
+  }
+
+  return {
+    key: candidate.candidate_key,
+    model: a.model || candidate.model || "",
+    year: Number(a.year || candidate.year || 0),
+    trim: a.trim || "",
+    score: Number(score || 0),
+    potential_score: potential,
+    penalty_points: Math.max(0, Math.round((potential - score) * 100) / 100),
+    confidence_pct: Number(a.confidence_pct || 0),
+    price_usd: Number(a.price_usd || candidate.price_usd || 0),
+    mileage_km: Number(a.mileage_km || candidate.mileage_km || 0),
+    reasons: reasons.slice(0, 2),
+    url: a.auto_ria_url || a.telegram_url || candidate.auto_ria_url || candidate.telegram_url || candidate.source_url || "",
+    verdict: compactText(a.verdict, 220),
+    found_at: previous.found_at || nowIso,
+    updated_at: nowIso,
+  };
+}
+
+function pruneInteresting(state, nowIso) {
+  const items = ensureInteresting(state);
+  const cutoff = Date.parse(nowIso) - 30 * 24 * 3600 * 1000;
+  for (const [key, item] of Object.entries(items)) {
+    const at = Date.parse(item.updated_at || item.found_at || "");
+    if (!at || at < cutoff) delete items[key];
+  }
+}
+
 function ensureTopGems(state) {
   if (!state.top_gems_by_key || typeof state.top_gems_by_key !== "object" || Array.isArray(state.top_gems_by_key)) {
     state.top_gems_by_key = {};
@@ -1529,7 +1591,7 @@ if (TEST_ONLY) {
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
     "Проверяю AUTO.RIA + KIEVAVTO + IsAuto и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
-    "Команды: /status — статус; /almost — 7.8–8.4; /top — лучшие ГЕМЫ за 30 дней."
+    "Команды: /status — статус; /almost — 7.8–8.4; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней."
   );
   process.exit(0);
 }
@@ -1603,6 +1665,7 @@ try {
   const lunaByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
   const watch = ensureMarketWatch(state);
   const almost = ensureAlmostGems(state);
+  const interesting = ensureInteresting(state);
   const alerts = [];
   let solAudits = 0;
   let solAuditFailures = 0;
@@ -1674,6 +1737,20 @@ try {
       delete almost[candidate.candidate_key];
     }
 
+    const interestingCandidate = interestingSnapshot(a, score, candidate, nowIso, interesting[candidate.candidate_key] || {});
+    if (
+      !a.hard_reject &&
+      score >= 6.5 &&
+      score < 7.8 &&
+      interestingCandidate.potential_score >= 8.0 &&
+      interestingCandidate.penalty_points >= 0.5 &&
+      Number(a.price_usd || candidate.price_usd || 0) <= 26000
+    ) {
+      interesting[candidate.candidate_key] = interestingCandidate;
+    } else {
+      delete interesting[candidate.candidate_key];
+    }
+
     const qualifies =
       solAuditOk &&
       !a.hard_reject &&
@@ -1706,6 +1783,7 @@ try {
   }
 
   pruneTopGems(state, nowIso);
+  pruneInteresting(state, nowIso);
   state.last_sol_audits = solAudits;
   state.last_sol_audit_failures = solAuditFailures;
   state.last_check_at = runStartedAt;
