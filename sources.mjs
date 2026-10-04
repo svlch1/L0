@@ -32,7 +32,15 @@ const AUTO_RIA_SEARCHES = [
   "https://auto.ria.com/uk/car/dodge/challenger/price/25000/amp/",
   "https://auto.ria.com/uk/car/kia/stinger/price/25000/amp/",
   "https://auto.ria.com/uk/car/volvo/s60/price/25000/amp/",
-  "https://auto.ria.com/uk/car/nissan/370z/price/25000/amp/"
+  "https://auto.ria.com/uk/car/nissan/370z/price/25000/amp/",
+  "https://auto.ria.com/uk/car/tesla/model-3/price/25000/amp/",
+  "https://auto.ria.com/uk/car/tesla/model-y/price/25000/amp/",
+  "https://auto.ria.com/uk/car/polestar/2/price/25000/amp/",
+  "https://auto.ria.com/uk/car/bmw/i4/price/25000/amp/",
+  "https://auto.ria.com/uk/car/hyundai/ioniq-5/price/25000/amp/",
+  "https://auto.ria.com/uk/car/hyundai/ioniq-6/price/25000/amp/",
+  "https://auto.ria.com/uk/car/kia/ev6/price/25000/amp/",
+  "https://auto.ria.com/uk/car/ford/mustang-mach-e/price/25000/amp/"
 ];
 
 // Every run also scans a few broad brand pages. This lets the bot discover
@@ -43,7 +51,8 @@ const EXPLORATION_BRANDS = [
   ["cadillac", "acura", "jaguar"],
   ["alfa-romeo", "volvo", "porsche"],
   ["ford", "chevrolet", "dodge"],
-  ["kia", "nissan", "maserati"]
+  ["kia", "nissan", "maserati"],
+  ["tesla", "polestar", "hyundai"]
 ];
 
 const AUTO_RIA_PAGES_PER_MODEL = 2;
@@ -81,7 +90,7 @@ const TELEGRAM_FEEDS = [
   { channel: "auto_residence_ua", label: "Авто Резіденс", url: "https://t.me/s/auto_residence_ua" },
 ];
 
-const INTERESTING_BRANDS = /\b(?:BMW|Mercedes(?:-Benz)?|Infiniti|Lexus|Audi|Genesis|Porsche|Jaguar|Cadillac|Acura|Volvo|Mustang|Camaro|Challenger|Maserati|Alfa\s+Romeo|Giulia|Stinger|370Z)\b/i;
+const INTERESTING_BRANDS = /\b(?:BMW|Mercedes(?:-Benz)?|Infiniti|Lexus|Audi|Genesis|Porsche|Jaguar|Cadillac|Acura|Volvo|Mustang|Camaro|Challenger|Maserati|Alfa\s+Romeo|Giulia|Stinger|370Z|Tesla|Model\s*[3Y]|Polestar|Ioniq\s*[56]|EV6|Mach-?E)\b/i;
 
 function decodeHtml(s) {
   return String(s || "")
