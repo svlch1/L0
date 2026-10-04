@@ -1182,6 +1182,60 @@ function compactTokens(n) {
   return String(n);
 }
 
+function ensurePreliminaryCandidates(state) {
+  if (!state.preliminary_candidates_by_key || typeof state.preliminary_candidates_by_key !== "object" || Array.isArray(state.preliminary_candidates_by_key)) {
+    state.preliminary_candidates_by_key = {};
+  }
+  return state.preliminary_candidates_by_key;
+}
+
+function preliminarySnapshot(candidate, nowIso, previous = {}) {
+  const note = compactText(candidate.listing_note, 180);
+  const anomaly = Number(candidate.price_anomaly_pct || 0);
+  const reasons = [];
+
+  if (anomaly >= 8) reasons.push(`цена примерно на ${anomaly.toFixed(1)}% ниже локальной медианы`);
+  if (Number(candidate.mileage_km || 0) > 0 && Number(candidate.mileage_km) <= 70000) {
+    reasons.push("хороший пробег для нашего фильтра");
+  }
+  if (note) reasons.push(note);
+
+  return {
+    key: candidate.candidate_key,
+    model: candidate.model || "",
+    year: Number(candidate.year || 0),
+    discovery_score: Number(candidate.discovery_score || 0),
+    price_usd: Number(candidate.price_usd || 0),
+    mileage_km: Number(candidate.mileage_km || 0),
+    source: candidate.source || "",
+    url: candidate.auto_ria_url || candidate.telegram_url || candidate.source_url || "",
+    reason: compactText(reasons[0] || "прошла первичный отбор Luna", 190),
+    first_seen_at: previous.first_seen_at || nowIso,
+    updated_at: nowIso,
+  };
+}
+
+function updatePreliminaryCandidates(state, candidates, nowIso) {
+  const store = ensurePreliminaryCandidates(state);
+
+  for (const candidate of candidates || []) {
+    const score = Number(candidate.discovery_score || 0);
+    if (!candidate.candidate_key || score < 7.5 || score >= 8.5) continue;
+    store[candidate.candidate_key] = preliminarySnapshot(
+      candidate,
+      nowIso,
+      store[candidate.candidate_key] || {}
+    );
+  }
+
+  const cutoff = Date.parse(nowIso) - 14 * 24 * 3600 * 1000;
+  for (const [key, item] of Object.entries(store)) {
+    const at = Date.parse(item.updated_at || item.first_seen_at || "");
+    const watch = state.market_watch?.[key];
+    if (!at || at < cutoff || watch?.last_analyzed_at) delete store[key];
+  }
+}
+
 function almostSnapshot(a, score, candidate, nowIso) {
   return {
     key: candidate.candidate_key,
@@ -1364,7 +1418,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
       ? "👇 Ниже отправлю найденные ГЕМЫ."
       : "ГЕМов нет — продолжаю следить за рынком.",
     "",
-    "⌨️ /status · /almost · /interesting · /top",
+    "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
 }
 
@@ -1726,7 +1780,7 @@ if (TEST_ONLY) {
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
     "Проверяю AUTO.RIA + 8 Telegram-каналов и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
-    "Команды: /status — статус; /almost — 7.8–8.4; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней."
+    "Команды: /status — статус; /candidates — preliminary 7.5–8.4 до deep; /almost — 7.8–8.4 после deep; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней."
   );
   process.exit(0);
 }
@@ -1783,6 +1837,9 @@ try {
 
   state.last_discovered_count = discovered.length;
 
+  // Human-readable shortlist: promising preliminary candidates that have not had VIN/history deep research yet.
+  updatePreliminaryCandidates(state, discovered, nowIso);
+
   // Every candidate that passed the cheap filter waits here until it actually gets deep-analyzed.
   enqueueDeepCandidates(state, discovered, nowIso);
   const deepQueueBefore = Object.keys(ensureDeepQueue(state)).length;
@@ -1796,6 +1853,8 @@ try {
 
   const successfulDeepKeys = (deep.analyses || []).map((a) => a.candidate_key);
   settleDeepQueue(state, selected, successfulDeepKeys, deep.failed_keys || [], nowIso);
+  const preliminary = ensurePreliminaryCandidates(state);
+  for (const key of successfulDeepKeys) delete preliminary[key];
 
   const lunaByKey = new Map((deep.analyses || []).map((a) => [a.candidate_key, a]));
   const watch = ensureMarketWatch(state);
