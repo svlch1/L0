@@ -295,7 +295,7 @@ async function fetchTelegramPages(channel, url, errors, cursor = {}) {
     let nextUrl = url;
     let rawCount = 0;
     let newestSeen = Number(cursor.pending_high_water || cursor.high_water || 0);
-    const pageBudget = Math.max(TELEGRAM_MAX_PAGES, Math.ceil(TELEGRAM_FORCE_RECENT_POSTS / 8) + 6);
+    const pageBudget = Math.min(60, Math.max(TELEGRAM_MAX_PAGES, Math.ceil(TELEGRAM_FORCE_RECENT_POSTS / 3) + 10));
 
     try {
       for (let page = 0; page < pageBudget && rawCount < TELEGRAM_FORCE_RECENT_POSTS; page++) {
