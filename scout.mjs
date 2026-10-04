@@ -32,7 +32,11 @@ function roundUsd(n) {
 }
 
 function countWebSearchCalls(data) {
-  return (data?.output || []).filter((x) => x?.type === "web_search_call").length;
+  return (data?.output || []).filter((x) => {
+    if (x?.type !== "web_search_call") return false;
+    const type = x?.action?.type;
+    return !type || type === "search";
+  }).length;
 }
 
 function recordApiUsage(data, model) {
