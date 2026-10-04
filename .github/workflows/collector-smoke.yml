@@ -1,4 +1,5 @@
 name: Collector Smoke Test
+# rerun-valid-routes
 
 on:
   push:
