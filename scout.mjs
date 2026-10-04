@@ -223,9 +223,15 @@ async function openaiJson({ prompt, schema, name, effort = "medium", maxOutputTo
     if (!data.id) throw new Error("Background response did not return an id");
 
     const deadline = Date.now() + 25 * 60 * 1000;
+    let pollCount = 0;
+    let lastLoggedStatus = "";
     while ((data.status === "queued" || data.status === "in_progress") && Date.now() < deadline) {
-      console.log(`OpenAI background response ${data.id}: ${data.status}`);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      if (data.status !== lastLoggedStatus || pollCount % 6 === 0) {
+        console.log(`OpenAI background response ${data.id}: ${data.status}`);
+        lastLoggedStatus = data.status;
+      }
+      pollCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10000));
 
       const poll = await fetch("https://api.openai.com/v1/responses/" + encodeURIComponent(data.id), {
         headers: {
