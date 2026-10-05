@@ -19,6 +19,20 @@ function nextScheduledCheck(state = {}) {
   return new Date(Date.now() + 4 * 3600 * 1000).toISOString();
 }
 
+function nextCheckStatusLine(state) {
+  const nextIso = nextScheduledCheck(state);
+  const due = Date.parse(nextIso);
+  const overdueMs = Date.now() - due;
+  if (Number.isFinite(due) && overdueMs > 20 * 60 * 1000) {
+    const mins = Math.floor(overdueMs / 60000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const late = h > 0 ? `${h}ч ${m}м` : `${m}м`;
+    return `⚠️ ПРОВЕРКА ПРОСРОЧЕНА на ${late} · цель была ~${formatKyiv(nextIso)}`;
+  }
+  return `⏭ Целевая следующая проверка: ~${formatKyiv(nextIso)}`;
+}
+
 async function loadState() {
   try {
     const r = await fetch(STATE_URL + "?t=" + Date.now(), {
@@ -328,7 +342,7 @@ function statusText(state) {
     `📲 ${tgLine}`,
     usage ? `💸 Последний проход: ~${usd(usage.estimated_cost_usd)}` : "💸 Стоимость появится после следующего прохода",
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
-    `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
+    nextCheckStatusLine(state),
     "",
     "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
