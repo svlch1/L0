@@ -274,10 +274,10 @@ function formatKyiv(iso) {
   }).format(new Date(iso));
 }
 
-function nextScheduledCheck() {
-  const d = new Date();
-  d.setUTCMinutes(0, 0, 0);
-  d.setUTCHours(Math.floor(d.getUTCHours() / 4) * 4 + 4);
+function nextScheduledCheck(state = {}) {
+  const last = Date.parse(state.last_check_at || "");
+  if (last) return new Date(last + 4 * 3600 * 1000).toISOString();
+  const d = new Date(Date.now() + 4 * 3600 * 1000);
   return d.toISOString();
 }
 
@@ -299,7 +299,7 @@ function statusText(state) {
     `🔎 Результат: ${result}`,
     `📊 Всего показано гемов: ${state.total_gems_sent || 0}`,
     `🔁 Всего завершённых проходов: ${state.completed_runs || 0}`,
-    `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck())}`,
+    `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
     "",
     "Источники: AUTO.RIA + 10 Telegram-каналов",
     "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
@@ -1771,6 +1771,16 @@ const runStartedAt = new Date().toISOString();
 const chatId = await getChatId();
 const state = loadSeen();
 
+// GitHub's scheduled cron is best-effort and can be delayed substantially.
+// Run the workflow hourly as a watchdog, but only pay for a scout pass when
+// the previous completed check is at least 3.5 hours old.
+if (process.env.GITHUB_EVENT_NAME === "schedule") {
+  const last = Date.parse(state.last_check_at || "");
+  if (last && Date.now() - last < 3.5 * 3600 * 1000) {
+    console.log("Scheduled watchdog: recent scout pass exists, skipping paid research.");
+    process.exit(0);
+  }
+}
 
 if (ANALYST_ONLY) {
   if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
