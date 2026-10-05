@@ -1771,13 +1771,14 @@ const runStartedAt = new Date().toISOString();
 const chatId = await getChatId();
 const state = loadSeen();
 
-// GitHub's scheduled cron is best-effort and can be delayed substantially.
-// Run the workflow hourly as a watchdog, but only pay for a scout pass when
-// the previous completed check is at least 3.5 hours old.
+// GitHub scheduled jobs are best-effort. We schedule frequent retry opportunities,
+// but only allow a paid scout pass when the previous real pass is ~4 hours old.
+// This makes missed cron slots harmless without multiplying OpenAI spend.
 if (process.env.GITHUB_EVENT_NAME === "schedule") {
   const last = Date.parse(state.last_check_at || "");
-  if (last && Date.now() - last < 3.5 * 3600 * 1000) {
-    console.log("Scheduled watchdog: recent scout pass exists, skipping paid research.");
+  const minIntervalMs = (3 * 60 + 50) * 60 * 1000;
+  if (last && Date.now() - last < minIntervalMs) {
+    console.log("Scheduled retry: recent scout pass exists, skipping paid research.");
     process.exit(0);
   }
 }
