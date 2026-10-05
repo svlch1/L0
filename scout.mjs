@@ -303,7 +303,7 @@ function statusText(state) {
     `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
     "",
     "Источники: AUTO.RIA + 10 Telegram-каналов",
-    "Авто-показ: сильные варианты 8.2–8.49; ГЕМЫ ≥ 8.5/10",
+    "Авто-показ: сильные варианты 8.0–8.49; ГЕМЫ ≥ 8.5/10",
   ].join("\n");
 }
 
@@ -608,8 +608,8 @@ async function runDailyAnalyst(state, chatId) {
     last_error: state.last_error || null,
     current_rules: {
       gem: ">=8.5 and confidence>=70",
-      strong_auto: "8.2-8.49 and confidence>=65; max 1 alert per run",
-      sol_audit: "Luna>=8.25 and confidence>=65",
+      strong_auto: "8.0-8.49 and confidence>=65; max 1 alert per run",
+      sol_audit: "Luna>=8.0 and confidence>=65",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
       sources: "AUTO.RIA + 10 Telegram-каналов",
@@ -1410,7 +1410,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
     solAudits ? `🧠 Самые сильные дополнительно перепроверены Sol: ${solAudits}` : null,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
-    `⚡ Сильных вариантов 8.2–8.49 для авто-показа: ${strongCount}`,
+    `⚡ Сильных вариантов 8.0–8.49 для авто-показа: ${strongCount}`,
     `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
@@ -1422,7 +1422,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
       ? "👇 Ниже отправлю найденные ГЕМЫ."
       : strongCount
         ? "👇 ГЕМа нет, но ниже покажу лучший сильный вариант этого прохода."
-        : "ГЕМов и сильных вариантов 8.2+ нет — продолжаю следить за рынком.",
+        : "ГЕМов и сильных вариантов 8.0+ нет — продолжаю следить за рынком.",
     "",
     "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
@@ -1948,7 +1948,7 @@ try {
 
     const shouldAuditWithSol =
       !luna.hard_reject &&
-      lunaScore >= 8.25 &&
+      lunaScore >= 8.0 &&
       lunaConfidence >= 65 &&
       lunaPrice > 0 &&
       lunaPrice <= 26000;
@@ -2060,7 +2060,7 @@ try {
       solAuditOk &&
       !qualifies &&
       !a.hard_reject &&
-      score >= 8.2 &&
+      score >= 8.0 &&
       score < 8.5 &&
       Number(a.confidence_pct || 0) >= 65 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 26000;
