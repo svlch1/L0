@@ -1,0 +1,48 @@
+name: Car Scout Reliable Scheduler
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".scheduler-test"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: car-gem-scheduler
+  cancel-in-progress: true
+
+jobs:
+  scheduler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 270
+    steps:
+      - name: Free scheduler wiring test
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run scout.yml --repo "$GITHUB_REPOSITORY" --ref main -f test_only=true
+
+      - name: Wait four hours
+        if: github.event_name == 'workflow_dispatch'
+        run: sleep 14400
+
+      - name: Trigger next real scout
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run scout-force.yml --repo "$GITHUB_REPOSITORY" --ref main; then
+              echo "Dispatched real scout."
+              exit 0
+            fi
+            echo "Dispatch failed on attempt $attempt."
+            sleep 60
+          done
+          exit 1
