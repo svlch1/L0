@@ -608,6 +608,8 @@ async function runDailyAnalyst(state, chatId) {
     last_error: state.last_error || null,
     current_rules: {
       gem: ">=8.5 and confidence>=70",
+      strong_auto: "8.2-8.49 and confidence>=65; max 1 alert per run",
+      sol_audit: "Luna>=8.25 and confidence>=65",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
       sources: "AUTO.RIA + 10 Telegram-каналов",
@@ -2063,7 +2065,7 @@ try {
       Number(a.confidence_pct || 0) >= 65 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 26000;
 
-    if (qualifiesStrong && (!item.strong_alerted || mayRepeat)) {
+    if (qualifiesStrong && ((!item.strong_alerted && !item.alerted) || mayRepeat)) {
       strongCandidates.push({
         text: formatStrongAlert(a, score, candidate),
         key: candidate.candidate_key,
