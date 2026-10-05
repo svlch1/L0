@@ -15,6 +15,7 @@ on:
           - "true"
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -30,6 +31,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
       - name: Run Car Gem Scout
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -37,15 +39,25 @@ jobs:
           TEST_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_only || 'false' }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: node scout.mjs
+
       - name: Save scout state
+        id: save_state
         if: always()
         run: |
           if git diff --quiet -- seen.json; then
+            echo "state_changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "state_changed=true" >> "$GITHUB_OUTPUT"
           git config user.name "Car Gem Scout"
           git config user.email "car-gem-scout@users.noreply.github.com"
           git add seen.json
           git commit -m "Update Car Gem Scout seen list"
           git pull --rebase origin main
           git push
+
+      - name: Arm next reliable scheduler
+        if: always() && steps.save_state.outputs.state_changed == 'true' && inputs.test_only != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run scout-scheduler.yml --repo "$GITHUB_REPOSITORY" --ref main
