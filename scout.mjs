@@ -298,11 +298,12 @@ function statusText(state) {
     `🕒 Последняя проверка: ${formatKyiv(state.last_check_at)}`,
     `🔎 Результат: ${result}`,
     `📊 Всего показано гемов: ${state.total_gems_sent || 0}`,
+    `⚡ Всего показано сильных вариантов: ${state.total_strong_sent || 0}`,
     `🔁 Всего завершённых проходов: ${state.completed_runs || 0}`,
     `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
     "",
     "Источники: AUTO.RIA + 10 Telegram-каналов",
-    "Фильтр: только реальные ГЕМЫ ≥ 8.5/10",
+    "Авто-показ: сильные варианты 8.2–8.49; ГЕМЫ ≥ 8.5/10",
   ].join("\n");
 }
 
@@ -1388,7 +1389,7 @@ function telegramCoverageText(stats) {
     parts.map((x) => `${x.label} ${x.posts}`).join(" · ");
 }
 
-function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAudits, gemCount }) {
+function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAudits, gemCount, strongCount = 0 }) {
   const usage = state.last_api_usage || runUsage;
   const today = state.api_usage_today || {};
   const watchCount = Object.keys(state.market_watch || {}).length;
@@ -1407,6 +1408,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
     solAudits ? `🧠 Самые сильные дополнительно перепроверены Sol: ${solAudits}` : null,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
+    `⚡ Сильных вариантов 8.2–8.49 для авто-показа: ${strongCount}`,
     `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
@@ -1416,7 +1418,9 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     "",
     gemCount
       ? "👇 Ниже отправлю найденные ГЕМЫ."
-      : "ГЕМов нет — продолжаю следить за рынком.",
+      : strongCount
+        ? "👇 ГЕМа нет, но ниже покажу лучший сильный вариант этого прохода."
+        : "ГЕМов и сильных вариантов 8.2+ нет — продолжаю следить за рынком.",
     "",
     "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
@@ -1496,6 +1500,54 @@ Real Buy-In Cost первые ~6 мес.: ${money(a.real_buy_in_low_usd)}–${mo
 🏁 ВЕРДИКТ
 ${a.verdict}`;
 }
+
+function formatStrongAlert(a, score, priceMeta = {}) {
+  const why = (a.why_gem || []).slice(0, 3).map((x) => "— " + x).join("\n") || "— Сильная совокупность цены, состояния и характеристик.";
+  const priceDrop = priceMeta.price_drop_trigger
+    ? `\n📉 PRICE DROP: ${money(priceMeta.previous_price_usd)} → ${money(a.price_usd)} (-${money(priceMeta.price_drop_usd).replace("$","$")}, ${priceMeta.price_drop_pct}%)`
+    : "";
+
+  return `⚡ СИЛЬНЫЙ ВАРИАНТ — ${a.model} ${a.year} ${a.trim}${priceDrop}
+
+💵 Цена: ${money(a.price_usd)}
+🛣 Пробег: ${a.mileage_km > 0 ? a.mileage_km.toLocaleString("ru-RU") + " км" : "нет данных"}
+⚙️ ${a.engine_transmission_drive}
+🏁 0–100: ${a.zero_to_100}
+⭐ Рейтинг покупки: ${score}/10
+🎯 Уверенность: ${a.confidence_pct}%
+
+📊 РАЗБИВКА
+Цена / рынок: ${a.price_score}/10
+История / состояние: ${a.history_score}/10
+Техника / риск расходов: ${a.technical_score}/10
+Ликвидность: ${a.liquidity_score}/10
+Эмоции / динамика: ${a.emotion_score}/10
+Комплектация: ${a.trim_score}/10
+
+🔗 ГДЕ НАШЁЛ
+${candidateUrls(a)}
+
+💡 ПОЧЕМУ СТОИТ ПОСМОТРЕТЬ
+${why}
+
+🇺🇸 ИСТОРИЯ / РИСК
+VIN: ${a.vin || "нет данных"}
+Повреждение: ${a.primary_secondary_damage}
+Airbags: ${a.airbags}
+Силовая структура: ${a.structure}
+Flood/Water: ${a.flood_water}
+Estimated Repair Cost: ${money(a.estimated_repair_cost_usd)}
+ACV: ${money(a.acv_usd)}
+
+💰 РЫНОК
+Аналоги: ${money(a.market_low_usd)}–${money(a.market_high_usd)}
+Цена, при которой точно интересно: ${money(a.target_buy_price_usd)}
+Перепродажа ~1 год: ${money(a.resale_1y_low_usd)}–${money(a.resale_1y_high_usd)}
+
+🏁 ВЕРДИКТ
+${a.verdict}`;
+}
+
 
 async function discoverCandidates(state, directItems = []) {
   const watchlist = compactWatchlist(state);
@@ -1877,6 +1929,7 @@ try {
   const almost = ensureAlmostGems(state);
   const interesting = ensureInteresting(state);
   const alerts = [];
+  const strongCandidates = [];
   let solAudits = 0;
   let solAuditFailures = 0;
   let almostQualifiedThisRun = 0;
@@ -1893,7 +1946,7 @@ try {
 
     const shouldAuditWithSol =
       !luna.hard_reject &&
-      lunaScore >= 8.45 &&
+      lunaScore >= 8.25 &&
       lunaConfidence >= 65 &&
       lunaPrice > 0 &&
       lunaPrice <= 26000;
@@ -2000,7 +2053,29 @@ try {
         price_usd: Number(a.price_usd || candidate.price_usd || 0),
       });
     }
+
+    const qualifiesStrong =
+      solAuditOk &&
+      !qualifies &&
+      !a.hard_reject &&
+      score >= 8.2 &&
+      score < 8.5 &&
+      Number(a.confidence_pct || 0) >= 65 &&
+      Number(a.price_usd || candidate.price_usd || 0) <= 26000;
+
+    if (qualifiesStrong && (!item.strong_alerted || mayRepeat)) {
+      strongCandidates.push({
+        text: formatStrongAlert(a, score, candidate),
+        key: candidate.candidate_key,
+        score,
+        confidence: Number(a.confidence_pct || 0),
+        price_usd: Number(a.price_usd || candidate.price_usd || 0),
+      });
+    }
   }
+
+  strongCandidates.sort((a, b) => (b.score - a.score) || (b.confidence - a.confidence));
+  const strongAlerts = strongCandidates.slice(0, 1);
 
   pruneTopGems(state, nowIso);
   pruneInteresting(state, nowIso);
@@ -2025,6 +2100,8 @@ try {
     deep_failed: Number(deep.failed || 0),
     deep_queue_after: Number(state.last_deep_queue_count || 0),
     almost: almostQualifiedThisRun,
+    strong_qualified: strongCandidates.length,
+    strong_alerts_new: strongAlerts.length,
     gems_qualified: gemsQualifiedThisRun,
     alerts_new: alerts.length,
     price_anomalies_in_batch: Number(state.last_price_anomaly_count || 0),
@@ -2034,7 +2111,7 @@ try {
     estimated_api_cost_usd: Number(runUsage.estimated_cost_usd || 0),
   });
 
-  if (!alerts.length) {
+  if (!alerts.length && !strongAlerts.length) {
     state.last_check_status = "no_gem";
     state.last_found_count = 0;
     state.last_sent_count = 0;
@@ -2046,6 +2123,7 @@ try {
       selectedCount: selected.length,
       solAudits,
       gemCount: 0,
+      strongCount: 0,
     }));
     console.log(
       `Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; no qualifying gem; estimated API cost: ${runUsage.estimated_cost_usd.toFixed(4)}.`
@@ -2054,7 +2132,7 @@ try {
   }
 
   state.last_check_status = "found";
-  state.last_found_count = alerts.length;
+  state.last_found_count = alerts.length + strongAlerts.length;
   state.last_sent_count = 0;
   saveState(state);
 
@@ -2065,10 +2143,26 @@ try {
     selectedCount: selected.length,
     solAudits,
     gemCount: alerts.length,
+    strongCount: strongAlerts.length,
   }));
 
   if (alerts.length > 1) {
     await sendText(chatId, `🔥 За этот проход найдено ${alerts.length} ГЕМОВ. Отправляю каждый отдельным сообщением.`);
+  }
+
+  for (const alert of strongAlerts) {
+    await sendText(chatId, alert.text);
+    state.last_sent_count += 1;
+    state.total_strong_sent = Number(state.total_strong_sent || 0) + 1;
+
+    const item = watch[alert.key] || {};
+    item.strong_alerted = true;
+    item.strong_alerted_at = nowIso;
+    item.strong_alerted_price_usd = alert.price_usd;
+    item.strong_alerted_score = alert.score;
+    watch[alert.key] = item;
+
+    saveSeen(state, alert.text);
   }
 
   for (const alert of alerts.slice(0, 5)) {
@@ -2088,7 +2182,7 @@ try {
 
   saveState(state);
   console.log(
-    `${state.last_sent_count} gem(s) sent. Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; estimated API cost: $${runUsage.estimated_cost_usd.toFixed(4)}.`
+    `${alerts.length} gem(s), ${strongAlerts.length} strong option(s) sent. Discovery: ${discovered.length}; Luna deep: ${selected.length}; Sol audits: ${solAudits}; estimated API cost: ${runUsage.estimated_cost_usd.toFixed(4)}.`
   );
 
 } catch (error) {
