@@ -13,11 +13,10 @@ function formatKyiv(iso) {
   }).format(new Date(iso));
 }
 
-function nextScheduledCheck() {
-  const d = new Date();
-  d.setUTCMinutes(0, 0, 0);
-  d.setUTCHours(Math.floor(d.getUTCHours() / 4) * 4 + 4);
-  return d.toISOString();
+function nextScheduledCheck(state = {}) {
+  const last = Date.parse(state.last_check_at || "");
+  if (last) return new Date(last + 4 * 3600 * 1000).toISOString();
+  return new Date(Date.now() + 4 * 3600 * 1000).toISOString();
 }
 
 async function loadState() {
@@ -329,7 +328,7 @@ function statusText(state) {
     `📲 ${tgLine}`,
     usage ? `💸 Последний проход: ~${usd(usage.estimated_cost_usd)}` : "💸 Стоимость появится после следующего прохода",
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
-    `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck())}`,
+    `⏭ Следующая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
     "",
     "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
