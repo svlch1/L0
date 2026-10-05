@@ -2,7 +2,7 @@ name: Car Gem Scout
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "11,26,41,56 * * * *"
   workflow_dispatch:
     inputs:
       test_only:
