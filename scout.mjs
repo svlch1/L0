@@ -1771,12 +1771,12 @@ const runStartedAt = new Date().toISOString();
 const chatId = await getChatId();
 const state = loadSeen();
 
-// GitHub scheduled jobs are best-effort. We schedule frequent retry opportunities,
-// but only allow a paid scout pass when the previous real pass is ~4 hours old.
-// This makes missed cron slots harmless without multiplying OpenAI spend.
+// GitHub scheduled jobs are best-effort and are only an overdue backup.
+// The self-dispatching scheduler is primary; cron may spend only when the
+// previous real pass is at least ~20 minutes overdue.
 if (process.env.GITHUB_EVENT_NAME === "schedule") {
   const last = Date.parse(state.last_check_at || "");
-  const minIntervalMs = (3 * 60 + 50) * 60 * 1000;
+  const minIntervalMs = (4 * 60 + 20) * 60 * 1000;
   if (last && Date.now() - last < minIntervalMs) {
     console.log("Scheduled retry: recent scout pass exists, skipping paid research.");
     process.exit(0);
