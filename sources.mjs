@@ -717,6 +717,12 @@ function sourcePriceByUrl(state) {
   return map;
 }
 
+export async function collectVoyahFreeOnly(state = {}) {
+  const errors = [];
+  const voyah = await fetchVoyahFreeInventory(state, errors);
+  return { voyah_free: voyah, errors };
+}
+
 export async function collectDirectSources(state = {}) {
   const seen = existingSourceSeen(state);
   const watched = watchByUrl(state);
