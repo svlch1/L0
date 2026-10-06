@@ -52,7 +52,11 @@
       "hard_reject": false,
       "hard_reject_reason": "",
       "sol_audited_at": "2026-10-06T18:59:14.519Z",
-      "needs_sol_audit": false
+      "needs_sol_audit": false,
+      "strong_alerted": true,
+      "strong_alerted_at": "2026-10-06T19:07:11.540Z",
+      "strong_alerted_price_usd": 22000,
+      "strong_alerted_score": 6.75
     },
     "VIN:JN1EV7JK3NM600451": {
       "key": "VIN:JN1EV7JK3NM600451",
@@ -14999,5 +15003,6 @@
   },
   "criteria_refresh_pending": false,
   "criteria_revision": "2026-10-06-v6-showcase",
-  "criteria_refreshed_at": "2026-10-06T18:59:14.519Z"
+  "criteria_refreshed_at": "2026-10-06T18:59:14.519Z",
+  "total_strong_sent": 1
 }
