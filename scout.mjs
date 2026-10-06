@@ -1391,6 +1391,128 @@ function telegramCoverageText(stats) {
     parts.map((x) => `${x.label} ${x.posts}`).join(" · ");
 }
 
+function ensureVoyahFreeWatch(state) {
+  if (!state.voyah_free_watch || typeof state.voyah_free_watch !== "object" || Array.isArray(state.voyah_free_watch)) {
+    state.voyah_free_watch = {};
+  }
+  return state.voyah_free_watch;
+}
+
+function updateVoyahFreeTracker(state, snapshot = {}, nowIso) {
+  const watch = ensureVoyahFreeWatch(state);
+  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const confirmedMissing = new Set((snapshot?.confirmed_missing_urls || []).map(normalizeUrl));
+  const baseline = !state.voyah_free_initialized_at;
+  const events = [];
+
+  for (const item of items) {
+    const url = normalizeUrl(item.source_url || item.auto_ria_url || "");
+    if (!url) continue;
+
+    const prev = watch[url] || null;
+    const price = Number(item.price_hint_usd || 0);
+    const mileage = Number(item.mileage_hint_km || 0);
+    const next = {
+      ...(prev || {}),
+      url,
+      model: "Voyah Free",
+      year: Number(item.year_hint || prev?.year || 0),
+      price_usd: price || Number(prev?.price_usd || 0),
+      mileage_km: mileage || Number(prev?.mileage_km || 0),
+      vin: String(item.vin_hint || prev?.vin || ""),
+      first_seen_at: prev?.first_seen_at || nowIso,
+      last_seen_at: nowIso,
+      active: true,
+      disappeared_at: null,
+    };
+
+    if (!baseline && !prev) {
+      events.push({ type: "new", item: next });
+    } else if (!baseline && prev?.active === false) {
+      events.push({ type: "returned", item: next, previous: prev });
+    } else if (
+      !baseline &&
+      prev &&
+      prev.active !== false &&
+      Number(prev.price_usd || 0) > 0 &&
+      price > 0 &&
+      price !== Number(prev.price_usd || 0)
+    ) {
+      next.previous_price_usd = Number(prev.price_usd || 0);
+      next.last_price_change_at = nowIso;
+      events.push({ type: "price", item: next, previous: prev });
+    }
+
+    watch[url] = next;
+  }
+
+  for (const url of confirmedMissing) {
+    const prev = watch[url];
+    if (!prev || prev.active === false) continue;
+    watch[url] = {
+      ...prev,
+      active: false,
+      disappeared_at: nowIso,
+      last_checked_at: nowIso,
+    };
+    if (!baseline) events.push({ type: "gone", item: watch[url], previous: prev });
+  }
+
+  if (!state.voyah_free_initialized_at && snapshot?.complete) {
+    state.voyah_free_initialized_at = nowIso;
+  }
+
+  const active = Object.values(watch).filter((x) => x?.active !== false).length;
+  const stats = {
+    checked_at: nowIso,
+    active,
+    scanned: items.length,
+    pages_scanned: Number(snapshot?.pages_scanned || 0),
+    scan_complete: Boolean(snapshot?.complete),
+    new_count: events.filter((x) => x.type === "new").length,
+    price_change_count: events.filter((x) => x.type === "price").length,
+    disappeared_count: events.filter((x) => x.type === "gone").length,
+    returned_count: events.filter((x) => x.type === "returned").length,
+  };
+  state.last_voyah_free_stats = stats;
+  return { events, stats };
+}
+
+function formatVoyahEvents(events = []) {
+  const blocks = events.slice(0, 12).map((event) => {
+    const x = event.item || {};
+    const mileage = Number(x.mileage_km || 0) > 0
+      ? Math.round(Number(x.mileage_km)).toLocaleString("ru-RU") + " км"
+      : "пробег не указан";
+    const title = `Voyah Free ${x.year || ""}`.trim();
+
+    if (event.type === "new") {
+      return `🆕 ${title} · ${money(x.price_usd)} · ${mileage}\n${x.url}`;
+    }
+    if (event.type === "returned") {
+      return `↩️ Снова появилось: ${title} · ${money(x.price_usd)} · ${mileage}\n${x.url}`;
+    }
+    if (event.type === "gone") {
+      return `❌ Объявление исчезло: ${title} · было ${money(x.price_usd)}\n${x.url}`;
+    }
+    if (event.type === "price") {
+      const oldPrice = Number(event.previous?.price_usd || x.previous_price_usd || 0);
+      const delta = Number(x.price_usd || 0) - oldPrice;
+      const arrow = delta < 0 ? "📉" : "📈";
+      const change = Math.abs(delta);
+      return `${arrow} Цена Voyah Free изменилась: ${money(oldPrice)} → ${money(x.price_usd)} (${delta < 0 ? "-" : "+"}${money(change)})\n${x.url}`;
+    }
+    return null;
+  }).filter(Boolean);
+
+  if (!blocks.length) return "";
+  return [
+    "🚙 Voyah Free — изменения на AUTO.RIA",
+    "",
+    ...blocks
+  ].join("\n\n").slice(0, 3900);
+}
+
 function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAudits, gemCount, strongCount = 0 }) {
   const usage = state.last_api_usage || runUsage;
   const today = state.api_usage_today || {};
@@ -1400,6 +1522,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     .length;
   const tgLine = telegramCoverageText(direct?.stats || {});
   const deepQueue = Number(state.last_deep_queue_count || 0);
+  const voyah = state.last_voyah_free_stats || {};
 
   return [
     "📡 Car Gem Scout — проверка завершена",
@@ -1415,6 +1538,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
     `📲 ${tgLine}`,
+    `🚙 Voyah Free AUTO.RIA: ${Number(voyah.active || 0)} активных · новых ${Number(voyah.new_count || 0)} · цена изменилась ${Number(voyah.price_change_count || 0)} · исчезло ${Number(voyah.disappeared_count || 0)}`,
     `💸 Этот проход: ~$ ${Number(usage.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     `📅 Сегодня: ~$ ${Number(today.estimated_cost_usd || 0).toFixed(3)}`.replace("$ ", "$"),
     "",
@@ -1850,7 +1974,7 @@ if (TEST_ONLY) {
     "✅ Car Gem Scout подключён.\n\n" +
     "Режим: каждые 4 часа / 6 раз в сутки.\n" +
     "Проверяю AUTO.RIA + 10 Telegram-каналов и пишу сюда только когда нахожу реальный ГЕМ.\n\n" +
-    "Команды: /status — статус; /candidates — preliminary 7.5–8.4 до deep; /almost — 7.8–8.4 после deep; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней."
+    "Команды: /status — статус; /candidates — preliminary 7.5–8.4 до deep; /almost — 7.8–8.4 после deep; /interesting — интересные варианты со штрафом; /top — лучшие ГЕМЫ за 30 дней; /voyah — весь текущий Voyah Free watchlist."
   );
   process.exit(0);
 }
@@ -1864,6 +1988,7 @@ try {
   state.last_collector_stats = direct.stats;
   state.last_collector_errors = (direct.errors || []).slice(0, 8);
   state.telegram_cursors = direct.telegram_cursors || state.telegram_cursors || {};
+  const voyahUpdate = updateVoyahFreeTracker(state, direct.voyah_free || {}, nowIso);
   if (direct.daily_sweep_performed) {
     state.last_daily_sweep_day = direct.daily_sweep_day;
     state.last_daily_sweep_at = nowIso;
@@ -1892,8 +2017,13 @@ try {
   state.last_exploration_brands = direct.exploration_brands || [];
   state.last_collector_mode = sourceBatch.length ? "direct" : "web_fallback";
 
-  // Persist the queue/high-water before any paid API call.
+  // Persist the queue/high-water and Voyah tracker before any paid API call.
   saveState(state);
+
+  const voyahEventText = formatVoyahEvents(voyahUpdate.events);
+  if (voyahEventText) {
+    await sendText(chatId, voyahEventText);
+  }
 
   const discovery = await discoverCandidates(state, sourceBatch);
 
