@@ -613,7 +613,7 @@ async function runDailyAnalyst(state, chatId) {
       strong_auto: "Sol-confirmed >=7.5 and confidence>=55; max 1 alert per run",
       sol_audit: "top 3 Luna>=7.25 and confidence>=30",
       almost: "7.8-8.49",
-      deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
+      deep_new_default: "discovery>=7.4; strong>=7.6; cap 6",
       sources: "AUTO.RIA + 10 Telegram-каналов",
       schedule: "every 4 hours"
     }
@@ -2134,6 +2134,23 @@ try {
       .slice(0, 3)
       .map((x) => x.key)
   );
+
+  const lunaShortlistLog = selected
+    .map((candidate) => {
+      const raw = lunaByKey.get(candidate.candidate_key);
+      if (!raw) return null;
+      const luna = calibrateAnalysis(raw);
+      return {
+        model: luna.model || candidate.model || "",
+        score: weightedScore(luna),
+        confidence: Number(luna.confidence_pct || 0),
+        hard_reject: Boolean(luna.hard_reject),
+        sol: solEligibleKeys.has(candidate.candidate_key),
+      };
+    })
+    .filter(Boolean)
+    .sort((a,b) => b.score - a.score);
+  console.log("Luna deep shortlist: " + JSON.stringify(lunaShortlistLog));
 
   let solAudits = 0;
   let solAuditFailures = 0;
