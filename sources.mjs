@@ -541,7 +541,7 @@ async function fetchTelegramPages(channel, url, errors, cursor = {}) {
   }
 }
 
-function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) {
+export function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) {
   const out = [];
   const seen = new Set();
   const modelHint = exploration ? "" : modelHintFromSearchUrl(searchUrl);
