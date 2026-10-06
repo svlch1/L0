@@ -566,7 +566,18 @@ function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) 
   return out;
 }
 
-async function fetchVoyahFreeInventory(errors) {
+async function confirmAutoRiaListingInactive(url) {
+  try {
+    const html = await fetchHtml(url);
+    const text = decodeHtml(html).toLowerCase();
+    return /(?:оголошення|объявление).{0,80}(?:неактив|видален|удален|продан)|(?:автомобіль|автомобиль).{0,40}продан/.test(text);
+  } catch (error) {
+    const message = String(error?.message || error);
+    return /HTTP\s+(?:404|410)\b/.test(message);
+  }
+}
+
+async function fetchVoyahFreeInventory(state, errors) {
   const byUrl = new Map();
   let pagesScanned = 0;
   let complete = true;
@@ -601,10 +612,30 @@ async function fetchVoyahFreeInventory(errors) {
     }
   }
 
+  const items = [...byUrl.values()];
+  const currentUrls = new Set(items.map((x) => normalizeUrl(x.source_url)));
+  const previousActive = Object.values(state?.voyah_free_watch || {})
+    .filter((x) => x?.active !== false && x?.url)
+    .map((x) => normalizeUrl(x.url));
+  const missing = previousActive.filter((url) => !currentUrls.has(url));
+  const confirmedMissing = [];
+
+  if (complete && pagesScanned > 0 && missing.length) {
+    const checks = await mapLimit(missing, Math.min(6, HTTP_CONCURRENCY), async (url) => ({
+      url,
+      inactive: await confirmAutoRiaListingInactive(url),
+    }));
+    for (const check of checks) {
+      if (check?.inactive) confirmedMissing.push(check.url);
+    }
+  }
+
   return {
-    items: [...byUrl.values()],
+    items,
     pages_scanned: pagesScanned,
     complete: complete && pagesScanned > 0,
+    confirmed_missing_urls: confirmedMissing,
+    missing_candidates: missing.length,
   };
 }
 
@@ -694,7 +725,7 @@ export async function collectDirectSources(state = {}) {
   const pages = autoRiaPageUrls(state);
   let autoPagesScanned = 0;
 
-  const voyahPromise = fetchVoyahFreeInventory(errors);
+  const voyahPromise = fetchVoyahFreeInventory(state, errors);
 
   const autoResults = await mapLimit(pages.all, HTTP_CONCURRENCY, async (page) => {
     try {
