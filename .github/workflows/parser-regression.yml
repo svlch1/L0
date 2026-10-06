@@ -1,0 +1,44 @@
+name: AUTO.RIA Parser Regression
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".parser-trigger"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax and live parser regression
+        run: |
+          node --check sources.mjs
+          node --check scout.mjs
+          node --input-type=module <<'NODE'
+          import { autoRiaCards } from './sources.mjs';
+          const url='https://auto.ria.com/uk/car/bmw/4-series/price/25000/amp/';
+          const r=await fetch(url,{headers:{'user-agent':'Mozilla/5.0 (compatible; CarGemScout/1.0)','accept-language':'uk-UA,uk;q=0.9'}});
+          if(!r.ok) throw new Error('AUTO.RIA HTTP '+r.status);
+          const html=await r.text();
+          const cars=autoRiaCards(html,url,false,false);
+          const target=cars.find(x=>x.source_url.includes('auto_bmw_4_series_40502211.html'));
+          console.log('accepted cars',cars.length);
+          console.log('target',JSON.stringify(target,null,2));
+          if(!target) throw new Error('Expected BMW 440i 2020 target missing');
+          if(target.year_hint!==2020 || target.price_hint_usd!==23000 || target.mileage_hint_km!==49000) {
+            throw new Error('Atomic parser mismatch: '+JSON.stringify(target));
+          }
+          if(cars.some(x=>x.source_url.includes('auto_bmw_4_series_40123095.html'))) {
+            throw new Error('2016/126k listing incorrectly passed user criteria');
+          }
+          console.log('PARSER_REGRESSION_OK');
+          NODE
