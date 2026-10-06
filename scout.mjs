@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { collectDirectSources, commitObservedUrls } from "./sources.mjs";
+import { collectDirectSources, collectVoyahFreeOnly, commitObservedUrls } from "./sources.mjs";
 import { weightedScore, calibrateAnalysis } from "./scoring.mjs";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TEST_ONLY = process.env.TEST_ONLY === "true";
 const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
+const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
 
 const LUNA_MODEL = "gpt-6-luna";
@@ -1964,6 +1965,26 @@ if (process.env.GITHUB_EVENT_NAME === "schedule") {
 if (ANALYST_ONLY) {
   if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
   await runDailyAnalyst(state, chatId);
+  process.exit(0);
+}
+
+if (VOYAH_ONLY) {
+  const direct = await collectVoyahFreeOnly(state);
+  const nowIso = new Date().toISOString();
+  const voyahUpdate = updateVoyahFreeTracker(state, direct.voyah_free || {}, nowIso);
+  state.last_collector_errors = (direct.errors || []).slice(0, 8);
+  saveState(state);
+
+  const eventText = formatVoyahEvents(voyahUpdate.events);
+  if (eventText) {
+    await sendText(chatId, eventText);
+  } else {
+    await sendText(
+      chatId,
+      `🚙 Voyah Free tracker синхронизирован.\n\nАктивных объявлений на AUTO.RIA: ${Number(voyahUpdate.stats.active || 0)}.\nКоманда /voyah — полный текущий список.`
+    );
+  }
+  console.log(`Voyah Free baseline synchronized: ${Number(voyahUpdate.stats.active || 0)} active.`);
   process.exit(0);
 }
 
