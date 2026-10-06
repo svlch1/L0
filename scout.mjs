@@ -8,6 +8,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TEST_ONLY = process.env.TEST_ONLY === "true";
 const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
 const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
+const SHOWCASE_ONLY = process.env.SHOWCASE_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
 const CRITERIA_REVISION = "2026-10-06-v6-showcase";
 
@@ -610,7 +611,7 @@ async function runDailyAnalyst(state, chatId) {
     last_error: state.last_error || null,
     current_rules: {
       gem: ">=8.5 and confidence>=70",
-      strong_auto: "Sol-confirmed >=6.5 and confidence>=50; max 1 alert per run",
+      strong_auto: "Sol-confirmed >=6.5 and confidence>=40; max 1 alert per run",
       sol_audit: "top 2 Luna>=6.7 and confidence>=35",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.4; strong>=7.6; cap 6",
@@ -1976,6 +1977,58 @@ if (ANALYST_ONLY) {
   process.exit(0);
 }
 
+if (SHOWCASE_ONLY) {
+  const cutoff = Date.now() - 24 * 3600000;
+  const watch = ensureMarketWatch(state);
+  const eligible = Object.values(watch)
+    .filter((x) =>
+      x &&
+      !x.hard_reject &&
+      !x.alerted &&
+      !x.strong_alerted &&
+      x.sol_audited_at &&
+      (Date.parse(x.sol_audited_at) || 0) >= cutoff &&
+      Number(x.last_score || 0) >= 6.5 &&
+      Number(x.last_score || 0) < 8.5 &&
+      Number(x.last_confidence_pct || 0) >= 40 &&
+      Number(x.last_analyzed_price_usd || x.last_price_usd || 0) > 0 &&
+      Number(x.last_analyzed_price_usd || x.last_price_usd || 0) <= 25000
+    )
+    .sort((a,b) => Number(b.last_score || 0) - Number(a.last_score || 0));
+
+  const x = eligible[0];
+  if (!x) {
+    console.log("SHOWCASE_ONLY: no eligible recent Sol-audited candidate.");
+    process.exit(0);
+  }
+
+  const price = Number(x.last_analyzed_price_usd || x.last_price_usd || 0);
+  const mileage = Number(x.mileage_km || 0);
+  const url = x.auto_ria_url || x.telegram_url || x.source_url || "";
+  const text = [
+    `👀 СТОИТ ПОСМОТРЕТЬ — ${x.model || "Кандидат"} ${x.year || ""}`.trim(),
+    "",
+    `💵 Цена: ${money(price)}`,
+    `🛣 Пробег: ${mileage > 0 ? mileage.toLocaleString("ru-RU") + " км" : "нет данных"}`,
+    `⭐ Итог после Sol: ${Number(x.last_score || 0).toFixed(2)}/10`,
+    `🎯 Уверенность: ${Number(x.last_confidence_pct || 0)}%`,
+    "✅ Hard reject: нет",
+    url ? `🔗 ${url}` : "",
+    "",
+    "Это не GEM и не сигнал покупать вслепую. Но по твоим фильтрам вариант достаточно интересный, чтобы открыть объявление и разобрать его руками."
+  ].filter(Boolean).join("\n");
+
+  await sendText(chatId, text);
+  x.strong_alerted = true;
+  x.strong_alerted_at = new Date().toISOString();
+  x.strong_alerted_price_usd = price;
+  x.strong_alerted_score = Number(x.last_score || 0);
+  state.total_strong_sent = Number(state.total_strong_sent || 0) + 1;
+  saveState(state);
+  console.log(`SHOWCASE_ONLY sent: ${x.model || ""} score=${x.last_score} confidence=${x.last_confidence_pct}`);
+  process.exit(0);
+}
+
 if (VOYAH_ONLY) {
   const direct = await collectVoyahFreeOnly(state);
   const nowIso = new Date().toISOString();
@@ -2279,7 +2332,7 @@ try {
       solAuditOk &&
       score >= 6.5 &&
       score < 8.5 &&
-      Number(a.confidence_pct || 0) >= 50 &&
+      Number(a.confidence_pct || 0) >= 40 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 25000;
 
     if (qualifiesStrong && ((!item.strong_alerted && !item.alerted) || mayRepeat)) {
