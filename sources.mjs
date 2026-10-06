@@ -57,6 +57,8 @@ const EXPLORATION_BRANDS = [
 
 const AUTO_RIA_PAGES_PER_MODEL = 2;
 const AUTO_RIA_DAILY_SWEEP_PAGES = 6;
+const VOYAH_FREE_URL = "https://auto.ria.com/uk/car/voyah/free/amp/";
+const VOYAH_FREE_MAX_PAGES = 10;
 const TELEGRAM_MAX_PAGES = 20;
 const TELEGRAM_FORCE_RECENT_POSTS = Math.max(0, Math.min(300, Number(process.env.TELEGRAM_FORCE_RECENT_POSTS || 0)));
 const FORCE_DAILY_SWEEP = process.env.FORCE_DAILY_SWEEP === "true";
@@ -517,7 +519,7 @@ async function fetchTelegramPages(channel, url, errors, cursor = {}) {
   }
 }
 
-function autoRiaCards(html, searchUrl, exploration = false) {
+function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) {
   const matches = [...html.matchAll(/href=["']([^"']*\/auto_[^"']+?\.html(?:\?[^"']*)?)["']/gi)];
   const out = [];
   const seen = new Set();
@@ -539,8 +541,8 @@ function autoRiaCards(html, searchUrl, exploration = false) {
     const mileage = extractMileageKm(text);
     const vin = extractVin(text);
 
-    if (price && price > 27000) continue;
-    if (mileage && mileage > 115000) continue;
+    if (!unfiltered && price && price > 27000) continue;
+    if (!unfiltered && mileage && mileage > 115000) continue;
 
     out.push({
       source: "AUTO.RIA",
@@ -562,6 +564,48 @@ function autoRiaCards(html, searchUrl, exploration = false) {
   }
 
   return out;
+}
+
+async function fetchVoyahFreeInventory(errors) {
+  const byUrl = new Map();
+  let pagesScanned = 0;
+  let complete = true;
+
+  for (let page = 1; page <= VOYAH_FREE_MAX_PAGES; page++) {
+    const url = page === 1 ? VOYAH_FREE_URL : VOYAH_FREE_URL + "?page=" + page;
+    try {
+      const html = await fetchHtml(url);
+      pagesScanned += 1;
+      const cards = autoRiaCards(html, VOYAH_FREE_URL, false, true)
+        .filter((x) => /voyah[_-]free/i.test(x.source_url) || /\bvoyah\s+free\b/i.test(x.raw_text || ""));
+      let newOnPage = 0;
+      for (const item of cards) {
+        const key = normalizeUrl(item.source_url);
+        if (!byUrl.has(key)) {
+          byUrl.set(key, { ...item, model_hint: "voyah/free", voyah_free: true });
+          newOnPage += 1;
+        }
+      }
+
+      // AUTO.RIA repeats/empties pages past the end. Once a page contributes
+      // nothing new, the inventory is fully traversed.
+      if (newOnPage === 0) break;
+      if (cards.length < 10) break;
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (page === 1) {
+        complete = false;
+        errors.push(`AUTO.RIA Voyah Free: ${message}`);
+      }
+      break;
+    }
+  }
+
+  return {
+    items: [...byUrl.values()],
+    pages_scanned: pagesScanned,
+    complete: complete && pagesScanned > 0,
+  };
 }
 
 function telegramPosts(html, channel, label) {
@@ -650,6 +694,8 @@ export async function collectDirectSources(state = {}) {
   const pages = autoRiaPageUrls(state);
   let autoPagesScanned = 0;
 
+  const voyahPromise = fetchVoyahFreeInventory(errors);
+
   const autoResults = await mapLimit(pages.all, HTTP_CONCURRENCY, async (page) => {
     try {
       const html = await fetchHtml(page.url);
@@ -664,6 +710,7 @@ export async function collectDirectSources(state = {}) {
     }
   });
 
+  const voyah = await voyahPromise;
   const allAutoRaw = autoResults.flat();
   const allAuto = annotatePriceAnomalies(allAutoRaw);
   const autoByUrl = new Map();
@@ -765,6 +812,7 @@ export async function collectDirectSources(state = {}) {
   return {
     pool,
     price_changed_items: priceChangedItems,
+    voyah_free: voyah,
     telegram_cursors: Object.fromEntries(tgResults.map((g) => [g.channel, g.cursor])),
     exploration_brands: explorationUrls(state).map((x) => x.brand),
     daily_sweep_performed: Boolean(pages.daily_sweep),
@@ -780,6 +828,9 @@ export async function collectDirectSources(state = {}) {
       auto_ria_pages_scanned: autoPagesScanned,
       auto_ria_raw_cards: autoByUrl.size,
       auto_ria_page_depth: pages.page_depth,
+      voyah_free_active: Number(voyah.items?.length || 0),
+      voyah_free_pages_scanned: Number(voyah.pages_scanned || 0),
+      voyah_free_scan_complete: Boolean(voyah.complete),
       daily_sweep_performed: Boolean(pages.daily_sweep),
       telegram_pages_scanned: tgResults.reduce((sum, group) => sum + Number(group.pages_scanned || 0), 0),
       telegram_raw_posts_seen: telegramRawPosts,
