@@ -29496,5 +29496,103 @@
       "first_seen_at": "2026-10-05T21:48:11.834Z",
       "updated_at": "2026-10-05T21:48:11.834Z"
     }
+  },
+  "voyah_free_watch": {
+    "https://auto.ria.com/uk/auto_voyah_free_40359693.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_40359693.html",
+      "model": "Voyah Free",
+      "year": 2026,
+      "price_usd": 52990,
+      "mileage_km": 1000,
+      "vin": "LDP95H963TE945122",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    },
+    "https://auto.ria.com/uk/auto_voyah_free_39203870.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_39203870.html",
+      "model": "Voyah Free",
+      "year": 2026,
+      "price_usd": 52990,
+      "mileage_km": 1000,
+      "vin": "LDP95H963TE945122",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    },
+    "https://auto.ria.com/uk/auto_voyah_free_40328873.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_40328873.html",
+      "model": "Voyah Free",
+      "year": 2022,
+      "price_usd": 31900,
+      "mileage_km": 1000,
+      "vin": "LDP95C96XNE018947",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    },
+    "https://auto.ria.com/uk/auto_voyah_free_40339988.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_40339988.html",
+      "model": "Voyah Free",
+      "year": 2026,
+      "price_usd": 52990,
+      "mileage_km": 1000,
+      "vin": "LDP95H960TE945126",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    },
+    "https://auto.ria.com/uk/auto_voyah_free_39933823.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_39933823.html",
+      "model": "Voyah Free",
+      "year": 2021,
+      "price_usd": 28500,
+      "mileage_km": 46000,
+      "vin": "LDP95C968ME015799",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    },
+    "https://auto.ria.com/uk/auto_voyah_free_40453140.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_40453140.html",
+      "model": "Voyah Free",
+      "year": 2022,
+      "price_usd": 22000,
+      "mileage_km": 94000,
+      "vin": "LDP95C963NE017543",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    },
+    "https://auto.ria.com/uk/auto_voyah_free_38281580.html": {
+      "url": "https://auto.ria.com/uk/auto_voyah_free_38281580.html",
+      "model": "Voyah Free",
+      "year": 2025,
+      "price_usd": 37200,
+      "mileage_km": 9000,
+      "vin": "LC0C74C49S5088214",
+      "first_seen_at": "2026-10-06T00:59:40.394Z",
+      "last_seen_at": "2026-10-06T00:59:40.394Z",
+      "active": true,
+      "disappeared_at": null
+    }
+  },
+  "voyah_free_initialized_at": "2026-10-06T00:59:40.394Z",
+  "last_voyah_free_stats": {
+    "checked_at": "2026-10-06T00:59:40.394Z",
+    "active": 7,
+    "scanned": 7,
+    "pages_scanned": 1,
+    "scan_complete": true,
+    "new_count": 0,
+    "price_change_count": 0,
+    "disappeared_count": 0,
+    "returned_count": 0
   }
 }
