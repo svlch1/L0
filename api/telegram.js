@@ -274,6 +274,44 @@ function topText(state) {
   ].join("\n\n").slice(0, 4000);
 }
 
+function voyahText(state) {
+  const items = Object.values(state.voyah_free_watch || {});
+  const active = items
+    .filter((x) => x?.active !== false)
+    .sort((a,b) => Number(a.price_usd || 0) - Number(b.price_usd || 0));
+  const goneRecent = items
+    .filter((x) => x?.active === false && x.disappeared_at)
+    .sort((a,b) => String(b.disappeared_at || "").localeCompare(String(a.disappeared_at || "")))
+    .slice(0, 5);
+
+  const activeBlocks = active.map((x,i) => {
+    const mileage = Number(x.mileage_km || 0) > 0
+      ? Math.round(Number(x.mileage_km)).toLocaleString("ru-RU") + " км"
+      : "нет данных";
+    return [
+      `${i+1}. 🚙 Voyah Free ${x.year || ""}`.trim(),
+      `💵 ${money(x.price_usd)} · 🛣 ${mileage}`,
+      x.vin ? `VIN: ${x.vin}` : null,
+      x.url ? `🔗 ${x.url}` : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  const goneBlocks = goneRecent.map((x) => [
+    `❌ Voyah Free ${x.year || ""} · было ${money(x.price_usd)}`.trim(),
+    x.disappeared_at ? `Исчезло: ${formatKyiv(x.disappeared_at)}` : null,
+    x.url ? `🔗 ${x.url}` : null,
+  ].filter(Boolean).join("\n"));
+
+  return [
+    `🚙 Voyah Free — AUTO.RIA watchlist`,
+    `Активных сейчас: ${active.length}`,
+    state.last_voyah_free_stats?.checked_at ? `Последняя сверка: ${formatKyiv(state.last_voyah_free_stats.checked_at)}` : null,
+    "",
+    activeBlocks.length ? activeBlocks.join("\n\n") : "Сейчас активных объявлений нет.",
+    goneBlocks.length ? "\nНедавно исчезли:\n\n" + goneBlocks.join("\n\n") : null,
+  ].filter(Boolean).join("\n").slice(0, 4000);
+}
+
 function telegramCoverageText(stats) {
   const channels = stats?.telegram_channels || {};
   const parts = Object.values(channels)
@@ -317,6 +355,7 @@ function statusText(state) {
   const preliminaryCount = preliminaryKeys.size;
   const tgLine = telegramCoverageText(state.last_collector_stats || {});
   const deepQueue = Number(state.last_deep_queue_count || 0);
+  const voyah = state.last_voyah_free_stats || {};
   const lastQuality = Array.isArray(state.quality_history) && state.quality_history.length
     ? state.quality_history[state.quality_history.length - 1]
     : null;
@@ -338,13 +377,14 @@ function statusText(state) {
     `🧩 Интересных вариантов со штрафом: ${interestingCount}`,
     `🔥 Всего отправлено ГЕМов: ${state.total_gems_sent || 0}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
+    `🚙 Voyah Free: ${Number(voyah.active || 0)} активных · новых ${Number(voyah.new_count || 0)} · цена изменилась ${Number(voyah.price_change_count || 0)} · исчезло ${Number(voyah.disappeared_count || 0)}`,
     "",
     `📲 ${tgLine}`,
     usage ? `💸 Последний проход: ~${usd(usage.estimated_cost_usd)}` : "💸 Стоимость появится после следующего прохода",
     today ? `📅 Сегодня: ~${usd(today.estimated_cost_usd)}` : null,
     nextCheckStatusLine(state),
     "",
-    "⌨️ /status · /candidates · /almost · /interesting · /top",
+    "⌨️ /status · /candidates · /almost · /interesting · /top · /voyah",
   ].filter(Boolean).join("\n");
 }
 
@@ -359,7 +399,7 @@ export default async function handler(req, res) {
   }
 
   const text = String(message.text || "").trim().toLowerCase();
-  if (!/^\/(start|status|candidates|almost|interesting|top)(@\w+)?\b/.test(text)) {
+  if (!/^\/(start|status|candidates|almost|interesting|top|voyah)(@\w+)?\b/.test(text)) {
     return res.status(200).json({ ok: true });
   }
 
@@ -372,7 +412,9 @@ export default async function handler(req, res) {
         ? interestingText(state)
         : /^\/top(@\w+)?\b/.test(text)
           ? topText(state)
-          : statusText(state);
+          : /^\/voyah(@\w+)?\b/.test(text)
+            ? voyahText(state)
+            : statusText(state);
 
   return res.status(200).json({
     method: "sendMessage",
