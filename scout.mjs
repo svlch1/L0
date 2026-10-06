@@ -9,7 +9,7 @@ const TEST_ONLY = process.env.TEST_ONLY === "true";
 const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
 const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
-const CRITERIA_REVISION = "2026-10-06-v3";
+const CRITERIA_REVISION = "2026-10-06-v4-parser";
 
 const LUNA_MODEL = "gpt-6-luna";
 const SOL_MODEL = "gpt-6.1-sol";
@@ -2013,9 +2013,18 @@ try {
   const criteriaRefresh = state.criteria_revision !== CRITERIA_REVISION;
   if (criteriaRefresh) {
     state.criteria_refresh_pending = true;
+    // Parser v4 invalidates the previous AUTO.RIA-derived analysis state:
+    // old ticket windows could attach one car's specs/VIN to another URL.
     state.source_seen_urls = [];
     state.source_queue = {};
+    state.source_price_watch = {};
     state.preliminary_candidates_by_key = {};
+    state.deep_queue = {};
+    state.market_watch = {};
+    state.almost_gems_by_key = {};
+    state.interesting_by_key = {};
+    state.top_gems_by_key = {};
+    state.vin_cache = {};
   }
 
   const direct = await collectDirectSources(state);
