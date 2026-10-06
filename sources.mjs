@@ -76,7 +76,7 @@ function kyivDayKey(date = new Date()) {
 }
 
 function dailySweepDue(state) {
-  if (FORCE_DAILY_SWEEP) return true;
+  if (FORCE_DAILY_SWEEP || state?.criteria_refresh_pending) return true;
   return String(state?.last_daily_sweep_day || "") !== kyivDayKey();
 }
 
@@ -176,6 +176,18 @@ function extractMileageKm(text) {
   if (m) return Math.round(Number(m[1]) * 1.60934);
 
   return 0;
+}
+
+function isElectricListingText(text) {
+  return /\b(?:електро|электро|electric|bev)\b/i.test(String(text || ""));
+}
+
+function userCriteriaMatch({ price = 0, mileage = 0, year = 0, text = "" } = {}) {
+  const ev = isElectricListingText(text);
+  if (price > 0 && price > 25000) return false;
+  if (year > 0 && year < 2019) return false;
+  if (mileage > 0 && mileage > (ev ? 50000 : 70000)) return false;
+  return true;
 }
 
 function extractVin(text) {
@@ -312,11 +324,21 @@ function explorationUrls(state) {
   }));
 }
 
+function autoRiaDepthFor(base, dailySweep) {
+  if (/\/tesla\/model-(?:3|y)\//i.test(base)) return dailySweep ? 32 : 8;
+  if (/\/(?:bmw\/3-series|bmw\/4-series|bmw\/4-series-gran-coupe|audi\/a5|mercedes-benz\/cla-class|mercedes-benz\/c-class)\//i.test(base)) {
+    return dailySweep ? 12 : 4;
+  }
+  return dailySweep ? 8 : 3;
+}
+
 function autoRiaPageUrls(state) {
   const dailySweep = dailySweepDue(state);
-  const pageDepth = dailySweep ? AUTO_RIA_DAILY_SWEEP_PAGES : AUTO_RIA_PAGES_PER_MODEL;
+  let maxDepth = 0;
 
   const core = AUTO_RIA_SEARCHES.flatMap((base) => {
+    const pageDepth = autoRiaDepthFor(base, dailySweep);
+    maxDepth = Math.max(maxDepth, pageDepth);
     const urls = [{ url: base, exploration: false }];
     for (let page = 2; page <= pageDepth; page++) {
       urls.push({ url: base + "?page=" + page, exploration: false });
@@ -337,7 +359,7 @@ function autoRiaPageUrls(state) {
     exploration,
     all: [...core, ...exploration],
     daily_sweep: dailySweep,
-    page_depth: pageDepth,
+    page_depth: maxDepth,
   };
 }
 
@@ -540,9 +562,9 @@ function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) 
     const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
     const vin = extractVin(text);
+    const year = extractYear(text, vin);
 
-    if (!unfiltered && price && price > 27000) continue;
-    if (!unfiltered && mileage && mileage > 115000) continue;
+    if (!unfiltered && !userCriteriaMatch({ price, mileage, year, text })) continue;
 
     out.push({
       source: "AUTO.RIA",
@@ -552,7 +574,7 @@ function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) 
       vin_hint: vin,
       price_hint_usd: price,
       mileage_hint_km: mileage,
-      year_hint: extractYear(text, vin),
+      year_hint: year,
       model_hint: modelHint,
       published_at_hint: extractDate(text),
       market_median_hint_usd: 0,
@@ -662,12 +684,12 @@ function telegramPosts(html, channel, label) {
 
     if (!INTERESTING_BRANDS.test(text)) continue;
     debug.brands += 1;
-    if (!price || price > 27000) continue;
-    debug.prices += 1;
-    if (mileage && mileage > 110000) {
-      debug.mileage_rejects += 1;
+    const year = extractYear(text, vin);
+    if (!price || !userCriteriaMatch({ price, mileage, year, text })) {
+      if (mileage && mileage > (isElectricListingText(text) ? 50000 : 70000)) debug.mileage_rejects += 1;
       continue;
     }
+    debug.prices += 1;
 
     debug.accepted += 1;
     out.push({
@@ -678,7 +700,7 @@ function telegramPosts(html, channel, label) {
       vin_hint: vin,
       price_hint_usd: price,
       mileage_hint_km: mileage,
-      year_hint: extractYear(text, vin),
+      year_hint: year,
       model_hint: "",
       published_at_hint: "",
       market_median_hint_usd: 0,
