@@ -542,13 +542,25 @@ async function fetchTelegramPages(channel, url, errors, cursor = {}) {
 }
 
 function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) {
-  const matches = [...html.matchAll(/href=["']([^"']*\/auto_[^"']+?\.html(?:\?[^"']*)?)["']/gi)];
   const out = [];
   const seen = new Set();
   const modelHint = exploration ? "" : modelHintFromSearchUrl(searchUrl);
 
-  for (const m of matches) {
-    let href = m[1].replace(/&amp;/g, "&");
+  // AUTO.RIA AMP wraps every listing in one atomic <a class="ticket-item">.
+  // Parse the whole ticket instead of taking a wide character window around
+  // an href; the old window could mix the previous car's price/year/mileage
+  // with the next car's URL.
+  const anchors = [...String(html).matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)];
+
+  for (const m of anchors) {
+    const attrs = String(m[1] || "");
+    const classMatch = attrs.match(/\bclass\s*=\s*["']([^"']*)["']/i);
+    if (!classMatch || !/(?:^|\s)ticket-item(?:\s|$)/i.test(classMatch[1])) continue;
+
+    const hrefMatch = attrs.match(/\bhref\s*=\s*["']([^"']*\/auto_[^"']+?\.html(?:\?[^"']*)?)["']/i);
+    if (!hrefMatch) continue;
+
+    let href = hrefMatch[1].replace(/&amp;/g, "&");
     if (href.startsWith("/")) href = "https://auto.ria.com" + href;
     if (!href.startsWith("http")) continue;
 
@@ -556,9 +568,8 @@ function autoRiaCards(html, searchUrl, exploration = false, unfiltered = false) 
     if (seen.has(url)) continue;
     seen.add(url);
 
-    const start = Math.max(0, m.index - 1800);
-    const end = Math.min(html.length, m.index + 5200);
-    const text = decodeHtml(html.slice(start, end)).slice(0, 2400);
+    const cardHtml = m[0];
+    const text = decodeHtml(cardHtml).slice(0, 3200);
     const price = extractPriceUsd(text);
     const mileage = extractMileageKm(text);
     const vin = extractVin(text);
