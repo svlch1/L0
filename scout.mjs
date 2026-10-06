@@ -9,7 +9,7 @@ const TEST_ONLY = process.env.TEST_ONLY === "true";
 const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
 const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
-const CRITERIA_REVISION = "2026-10-06-v5-audit";
+const CRITERIA_REVISION = "2026-10-06-v6-showcase";
 
 const LUNA_MODEL = "gpt-6-luna";
 const SOL_MODEL = "gpt-6.1-sol";
@@ -305,7 +305,7 @@ function statusText(state) {
     `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
     "",
     "Источники: AUTO.RIA + 10 Telegram-каналов",
-    "Авто-показ: лучший Sol-подтверждённый вариант ≥7.5; ГЕМЫ ≥ 8.5/10",
+    "Авто-показ: лучший Sol-подтверждённый вариант ≥6.5; ГЕМЫ ≥ 8.5/10",
   ].join("\n");
 }
 
@@ -610,8 +610,8 @@ async function runDailyAnalyst(state, chatId) {
     last_error: state.last_error || null,
     current_rules: {
       gem: ">=8.5 and confidence>=70",
-      strong_auto: "Sol-confirmed >=7.5 and confidence>=55; max 1 alert per run",
-      sol_audit: "top 3 Luna>=7.25 and confidence>=30",
+      strong_auto: "Sol-confirmed >=6.5 and confidence>=50; max 1 alert per run",
+      sol_audit: "top 2 Luna>=6.7 and confidence>=35",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.4; strong>=7.6; cap 6",
       sources: "AUTO.RIA + 10 Telegram-каналов",
@@ -1536,7 +1536,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
     solAudits ? `🧠 Самые сильные дополнительно перепроверены Sol: ${solAudits}` : null,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
-    `👀 Sol-подтверждённых вариантов ≥7.5 для авто-показа: ${strongCount}`,
+    `👀 Sol-подтверждённых вариантов ≥6.5 для авто-показа: ${strongCount}`,
     `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
@@ -1549,7 +1549,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
       ? "👇 Ниже отправлю найденные ГЕМЫ."
       : strongCount
         ? "👇 ГЕМа нет, но ниже покажу лучший сильный вариант этого прохода."
-        : "ГЕМов и Sol-подтверждённых вариантов 7.5+ нет — продолжаю следить за рынком.",
+        : "ГЕМов и достойных Sol-подтверждённых вариантов 6.5+ нет — продолжаю следить за рынком.",
     "",
     "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
@@ -2129,9 +2129,9 @@ try {
         const price = Number(luna.price_usd || candidate.price_usd || 0);
         return { key: candidate.candidate_key, score, confidence, price, hard: Boolean(luna.hard_reject) };
       })
-      .filter((x) => x && !x.hard && x.score >= 7.25 && x.confidence >= 30 && x.price > 0 && x.price <= 25000)
+      .filter((x) => x && !x.hard && x.score >= 6.7 && x.confidence >= 35 && x.price > 0 && x.price <= 25000)
       .sort((a, b) => (b.score - a.score) || (b.confidence - a.confidence))
-      .slice(0, 3)
+      .slice(0, 2)
       .map((x) => x.key)
   );
 
@@ -2277,9 +2277,9 @@ try {
       !a.hard_reject &&
       shouldAuditWithSol &&
       solAuditOk &&
-      score >= 7.5 &&
+      score >= 6.5 &&
       score < 8.5 &&
-      Number(a.confidence_pct || 0) >= 55 &&
+      Number(a.confidence_pct || 0) >= 50 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 25000;
 
     if (qualifiesStrong && ((!item.strong_alerted && !item.alerted) || mayRepeat)) {
