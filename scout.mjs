@@ -9,6 +9,7 @@ const TEST_ONLY = process.env.TEST_ONLY === "true";
 const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
 const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
+const CRITERIA_REVISION = "2026-10-06-v3";
 
 const LUNA_MODEL = "gpt-6-luna";
 const SOL_MODEL = "gpt-6.1-sol";
@@ -304,7 +305,7 @@ function statusText(state) {
     `⏭ Следующая плановая проверка: ~${formatKyiv(nextScheduledCheck(state))}`,
     "",
     "Источники: AUTO.RIA + 10 Telegram-каналов",
-    "Авто-показ: сильные варианты 8.0–8.49; ГЕМЫ ≥ 8.5/10",
+    "Авто-показ: сильные варианты 7.8–8.49; ГЕМЫ ≥ 8.5/10",
   ].join("\n");
 }
 
@@ -609,8 +610,8 @@ async function runDailyAnalyst(state, chatId) {
     last_error: state.last_error || null,
     current_rules: {
       gem: ">=8.5 and confidence>=70",
-      strong_auto: "8.0-8.49 and confidence>=65; max 1 alert per run",
-      sol_audit: "Luna>=8.0 and confidence>=65",
+      strong_auto: "7.8-8.49 and confidence>=65; max 1 alert per run",
+      sol_audit: "Luna>=7.7 and confidence>=55",
       almost: "7.8-8.49",
       deep_new_default: "discovery>=7.7; all discovery>=8.0 go immediately, cap 6",
       sources: "AUTO.RIA + 10 Telegram-каналов",
@@ -909,8 +910,8 @@ function deepEligible(item) {
   if (item.price_drop_trigger && previous >= 7.0) return true;
   if (!item.never_analyzed) return false;
 
-  if (score >= 7.7) return true;
-  if (score >= 7.4 && anomaly >= 12 && (!mileage || mileage <= 90000)) return true;
+  if (score >= 7.4) return true;
+  if (score >= 7.2 && anomaly >= 10 && (!mileage || mileage <= 70000)) return true;
   return false;
 }
 
@@ -980,7 +981,7 @@ function selectDeepBatch(state) {
     x.needs_sol_audit ||
     x.target_price_trigger ||
     (x.price_drop_trigger && Number(x.previous_score || 0) >= 7.5) ||
-    Number(x.discovery_score || 0) >= 8.0
+    Number(x.discovery_score || 0) >= 7.6
   );
 
   const selected = [];
@@ -992,10 +993,11 @@ function selectDeepBatch(state) {
     used.add(item.candidate_key);
   }
 
-  // Если сильных мало, добираем максимум до двух лучшими из очереди 7.7–7.99.
-  if (selected.length < 2) {
+  // После точного дешёвого фильтра deep уже не должен быть сверхредким:
+  // добираем минимум до четырёх лучших подходящих машин за проход.
+  if (selected.length < 4) {
     for (const item of available) {
-      if (selected.length >= 2) break;
+      if (selected.length >= 4) break;
       if (used.has(item.candidate_key)) continue;
       selected.push(item);
       used.add(item.candidate_key);
@@ -1534,7 +1536,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
     Number(state.last_deep_failed_count || 0) ? `↻ На повтор после ошибки: ${state.last_deep_failed_count}` : null,
     solAudits ? `🧠 Самые сильные дополнительно перепроверены Sol: ${solAudits}` : null,
     `🟡 Почти гемов 7.8–8.4: ${almostCount}`,
-    `⚡ Сильных вариантов 8.0–8.49 для авто-показа: ${strongCount}`,
+    `⚡ Сильных вариантов 7.8–8.49 для авто-показа: ${strongCount}`,
     `🔥 ГЕМов >=8.5 найдено: ${gemCount}`,
     `👀 Машин под наблюдением за ценой: ${watchCount}`,
     "",
@@ -1547,7 +1549,7 @@ function formatRunSummary({ state, direct, discoveredCount, selectedCount, solAu
       ? "👇 Ниже отправлю найденные ГЕМЫ."
       : strongCount
         ? "👇 ГЕМа нет, но ниже покажу лучший сильный вариант этого прохода."
-        : "ГЕМов и сильных вариантов 8.0+ нет — продолжаю следить за рынком.",
+        : "ГЕМов и сильных вариантов 7.8+ нет — продолжаю следить за рынком.",
     "",
     "⌨️ /status · /candidates · /almost · /interesting · /top",
   ].filter(Boolean).join("\n");
@@ -1707,19 +1709,19 @@ async function discoverCandidates(state, directItems = []) {
 Из сырых карточек ниже выбрать максимум 10 кандидатов для дорогого глубокого VIN-анализа.
 Используй ТОЛЬКО данные из RAW ITEMS. source_url/auto_ria_url/telegram_url копируй ТОЧНО.
 
-КРИТЕРИИ:
-- бюджет обычно <= $25,000; до ~$26,500 только если вариант реально сильный/есть очевидный торг;
-- пробег желательно <=70k км, до ~90k допустимо у сильной модели/цены;
-- эффектный спортивный/премиальный автомобиль;
-- динамика желательно около 6 сек 0–100 или быстрее;
-- главный ориентир Infiniti Q60;
-- подходят интересные BMW 3/4, Mercedes C/CLA/coupe, Lexus RC/IS, Audi A5/S5, Genesis G70 и аналогичные;
-- электрички тоже рассматривай: Tesla Model 3/Y, Polestar 2, BMW i4, Hyundai Ioniq 5/6, Kia EV6, Mustang Mach-E;
-- не тащи скучные массовые седаны;
-- Kia Stinger только при аномально выгодной сделке;
-- очевидные flood/fire/тяжёлый structural мусор не выбирай, если это прямо видно в тексте;
+КРИТЕРИИ ПОЛЬЗОВАТЕЛЯ — СНАЧАЛА ИХ, ПОТОМ ВКУС:
+- цена <= $25,000;
+- год >= 2019;
+- бензин/дизель/гибрид: пробег <=70k км;
+- EV: пробег <=50k км;
+- город ЛЮБОЙ по Украине;
+- американец допустим: небольшое/среднее ДТП нормально, если нет flood/fire/тяжёлого structural/safety-cell и восстановление выглядит разумно;
+- спортивность, премиальность, внешность, 0–100 около 6 сек или быстрее — это ПЛЮСЫ К РЕЙТИНГУ, а не жёсткие причины отсева;
+- главный ориентир Infiniti Q60, но НЕ ограничивайся заранее списком моделей: BMW, Mercedes, Lexus, Audi, Genesis, Acura, Cadillac, Jaguar, Alfa, Mustang/Camaro, быстрые EV и другие интересные варианты допустимы;
+- не отбрасывай хорошую машину только потому, что она не редкая или не идеальная;
+- очевидные flood/fire/тяжёлый structural мусор не выбирай;
 - для каждого поставь discovery_score 0–10;
-- не добивай список ради количества: возвращай только реально сильных кандидатов, ориентир discovery_score от 7.2;
+- 7.0+ = уже стоит передать в глубокий анализ, 7.6+ = сильный preliminary;
 - market_median_hint_usd / price_anomaly_pct уже посчитал локальный код: если машина на 10–15%+ дешевле медианы похожих объявлений, это сильный плюс, но не игнорируй возможную причину низкой цены;
 - queue_age_hours — сколько кандидат ждал обработки. Старый нормальный кандидат не должен проигрывать бесконечно новым;
 - exploration=true означает, что машина найдена широким ротационным поиском по бренду, а не из фиксированного списка моделей.
@@ -1752,13 +1754,13 @@ ${JSON.stringify(watchlist)}
 Проверь AUTO.RIA и публичные Telegram-источники: KIEVAVTO, IsAuto, Imperiya Auto, Grand The Auto, Автобазар Дніпро, Karavan Дніпро, Hapai Auto, Griznes Auto, Авто Резіденс и Magnat Auto.
 
 КРИТЕРИИ:
-- бюджет до $25,000; до ~$26,500 только для очень сильного варианта;
-- пробег желательно <=70k км, до ~90k допустимо;
-- эффектный спортивный/премиальный автомобиль;
-- ~6 сек 0–100 или быстрее желательно;
-- ориентир Infiniti Q60; также BMW 3/4, Mercedes C/CLA/coupe, Lexus RC/IS, Audi и аналоги;
-- EV тоже допустимы: Tesla Model 3/Y, Polestar 2, BMW i4, Ioniq 5/6, EV6, Mustang Mach-E;
-- не предлагай скучные массовые седаны;
+- цена <= $25,000;
+- год >= 2019;
+- ДВС/гибрид <=70k км; EV <=50k км;
+- город любой;
+- небольшой/средний американский удар допустим, если нет flood/fire/тяжёлой силовой структуры;
+- спортивность/премиальность/динамика — предпочтения и плюсы к рейтингу, НЕ жёсткий фильтр;
+- ориентир Infiniti Q60, но ищи шире: BMW, Mercedes, Lexus, Audi, Genesis, Acura, Cadillac, Jaguar, Alfa, Mustang/Camaro, быстрые EV и аналоги;
 - максимум 10 кандидатов;
 - прямые URL обязательны;
 - не выдумывай VIN/цену/пробег/URL.
@@ -1802,10 +1804,12 @@ ${cacheInstruction}
 
 МОЙ ПРОФИЛЬ:
 - первая машина в Украине;
-- максимум около $25,000;
-- пробег желательно 60–70k км;
-- хочу эффектную спортивную/премиальную машину;
-- 0–100 желательно ~6 сек или быстрее;
+- ЖЁСТКАЯ цена <= $25,000;
+- год >=2019;
+- ДВС/гибрид: <=70k км; EV: <=50k км;
+- город любой;
+- хочу эффектную/приятную машину; спортивность и премиальность — плюс, но не обязательный пропуск;
+- 0–100 около 6 сек или быстрее желательно, но это не hard reject;
 - важны надёжность, ликвидность и умеренная потеря цены;
 - главный ориентир Infiniti Q60;
 - электрички рассматриваются наравне, если они быстрые, эффектные и ликвидные.
@@ -1840,11 +1844,14 @@ price 25%, history 25%, technical 20%, liquidity 15%, emotion 10%, trim 5%.
 [{"name":"Strong Acura TLX-style deal","expected":[8.4,8.8]},{"name":"Good Audi A5-style deal","expected":[8,8.4]},{"name":"Good Mustang-style deal","expected":[7.8,8.2]},{"name":"Solid Audi S3-style deal","expected":[7.5,7.9]},{"name":"Solid Lexus IS350-style deal","expected":[7.4,7.8]}]
 
 Интерпретация итогового score:
-<7.0 — слабый вариант;
-7.0–7.79 — нормальный, но недостаточно сильный;
-7.8–8.19 — сильный вариант;
-8.2–8.49 — почти GEM;
+<7.0 — слабый/невыгодный вариант;
+7.0–7.49 — нормальный, но есть заметные компромиссы;
+7.5–7.79 — хороший вариант с оговорками;
+7.8–8.19 — СИЛЬНЫЙ вариант, который пользователю уже стоит показать;
+8.2–8.49 — очень сильный, почти GEM;
 >=8.5 — редкий GEM.
+ВАЖНО: не резервируй 8+ только для идеальной безаварийной Европы. Машина, которая чётко попадает в цену/год/пробег, имеет нормальную ликвидность и лишь умеренное восстановленное ДТП без flood/fire/structure, вполне может заслуживать 7.8–8.4.
+Типовые слабые места модели сами по себе не должны сильно снижать technical_score без признаков проблемы у конкретного экземпляра.
 
 target_buy_price_usd — цена, при которой машина стала бы действительно интересной.
 
@@ -2003,8 +2010,22 @@ if (TEST_ONLY) {
 if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 
 try {
+  const criteriaRefresh = state.criteria_revision !== CRITERIA_REVISION;
+  if (criteriaRefresh) {
+    state.criteria_refresh_pending = true;
+    state.source_seen_urls = [];
+    state.source_queue = {};
+    state.preliminary_candidates_by_key = {};
+  }
+
   const direct = await collectDirectSources(state);
   const nowIso = new Date().toISOString();
+
+  if (criteriaRefresh) {
+    state.criteria_revision = CRITERIA_REVISION;
+    state.criteria_refresh_pending = false;
+    state.criteria_refreshed_at = nowIso;
+  }
 
   state.last_collector_stats = direct.stats;
   state.last_collector_errors = (direct.errors || []).slice(0, 8);
@@ -2099,8 +2120,8 @@ try {
 
     const shouldAuditWithSol =
       !luna.hard_reject &&
-      lunaScore >= 8.0 &&
-      lunaConfidence >= 65 &&
+      lunaScore >= 7.7 &&
+      lunaConfidence >= 55 &&
       lunaPrice > 0 &&
       lunaPrice <= 26000;
 
@@ -2211,7 +2232,7 @@ try {
       solAuditOk &&
       !qualifies &&
       !a.hard_reject &&
-      score >= 8.0 &&
+      score >= 7.8 &&
       score < 8.5 &&
       Number(a.confidence_pct || 0) >= 65 &&
       Number(a.price_usd || candidate.price_usd || 0) <= 26000;
