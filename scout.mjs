@@ -11,6 +11,12 @@ const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
 const SHOWCASE_ONLY = process.env.SHOWCASE_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
 const CRITERIA_REVISION = "2026-10-06-v6-showcase";
+const SCOUT_PAUSED = fs.existsSync(".scout-paused");
+
+if (SCOUT_PAUSED && process.env.IGNORE_SCOUT_PAUSE !== "true") {
+  console.log("Car Gem Scout is paused via .scout-paused; exiting without search or API calls.");
+  process.exit(0);
+}
 
 const LUNA_MODEL = "gpt-6-luna";
 const SOL_MODEL = "gpt-6.1-sol";
