@@ -10,6 +10,9 @@ const ANALYST_ONLY = process.env.ANALYST_ONLY === "true";
 const VOYAH_ONLY = process.env.VOYAH_ONLY === "true";
 const SHOWCASE_ONLY = process.env.SHOWCASE_ONLY === "true";
 const SOURCE_BATCH_LIMIT = Math.max(1, Math.min(96, Number(process.env.SOURCE_BATCH_LIMIT || 32)));
+const DEEP_BATCH_MAX = Math.max(1, Math.min(12, Number(process.env.DEEP_BATCH_MAX || 6)));
+const DEEP_BATCH_MIN = Math.max(1, Math.min(DEEP_BATCH_MAX, Number(process.env.DEEP_BATCH_MIN || 4)));
+const SOL_AUDIT_LIMIT = Math.max(1, Math.min(6, Number(process.env.SOL_AUDIT_LIMIT || 2)));
 const CRITERIA_REVISION = "2026-10-06-v6-showcase";
 const SCOUT_PAUSED = fs.existsSync(".scout-paused");
 
@@ -995,16 +998,16 @@ function selectDeepBatch(state) {
   const used = new Set();
 
   for (const item of strong) {
-    if (selected.length >= 6) break;
+    if (selected.length >= DEEP_BATCH_MAX) break;
     selected.push(item);
     used.add(item.candidate_key);
   }
 
   // После точного дешёвого фильтра deep уже не должен быть сверхредким:
   // добираем минимум до четырёх лучших подходящих машин за проход.
-  if (selected.length < 4) {
+  if (selected.length < DEEP_BATCH_MIN) {
     for (const item of available) {
-      if (selected.length >= 4) break;
+      if (selected.length >= DEEP_BATCH_MIN) break;
       if (used.has(item.candidate_key)) continue;
       selected.push(item);
       used.add(item.candidate_key);
@@ -2190,7 +2193,7 @@ try {
       })
       .filter((x) => x && !x.hard && x.score >= 6.7 && x.confidence >= 35 && x.price > 0 && x.price <= 25000)
       .sort((a, b) => (b.score - a.score) || (b.confidence - a.confidence))
-      .slice(0, 2)
+      .slice(0, SOL_AUDIT_LIMIT)
       .map((x) => x.key)
   );
 
